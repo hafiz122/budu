@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-surface: #3c3c3c;
+  --color-surface-alt: #2d2d2d;
+  --color-surface-hover: #4a4a4a;
+  --color-accent: #7c9c2e;
+  --color-accent-hover: #8db834;
+  --color-accent-muted: #7c9c2e33;
+  --color-text-primary: #e0e0d0;
+  --color-text-secondary: #a0a090;
+  --color-text-muted: #707060;
+  --color-border: #555555;
+  --color-border-focus: #7c9c2e;
+  --color-success: #5a8f3c;
+  --color-warning: #c49c30;
+  --color-danger: #b33a3a;
+  --radius: 3px;
+  --font-sans: Tahoma, Geneva, Verdana, sans-serif;
+  --font-mono: 'Courier New', Courier, monospace;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-surface-alt);
+  border: 1px solid #222;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #666 0%, #444 100%);
+  border: 1px solid #333;
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #777 0%, #555 100%);
+}
+
+/* Retro utility classes */
+@layer utilities {
+  .drag-region {
+    -webkit-app-region: drag;
+  }
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+  .bevel {
+    border: 2px solid;
+    border-color: #6a6a6a #2a2a2a #2a2a2a #6a6a6a;
+  }
+  .bevel-inset {
+    border: 2px solid;
+    border-color: #2a2a2a #6a6a6a #6a6a6a #2a2a2a;
+  }
+  .gloss {
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+  }
+  .text-shadow {
+    text-shadow: 0 1px 0 rgba(0,0,0,0.5);
+  }
+}

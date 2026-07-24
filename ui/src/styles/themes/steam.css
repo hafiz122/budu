@@ -1,0 +1,19 @@
+[data-theme='steam'] {
+  --color-surface: #1b2838;
+  --color-surface-alt: #16202d;
+  --color-surface-hover: #2a3f56;
+  --color-accent: #66c0f4;
+  --color-accent-hover: #7dcbf7;
+  --color-accent-muted: #66c0f433;
+  --color-text-primary: #c7d5e0;
+  --color-text-secondary: #8f98a0;
+  --color-text-muted: #556772;
+  --color-border: #2a3f56;
+  --color-border-focus: #66c0f4;
+  --color-success: #6cc067;
+  --color-warning: #c0b067;
+  --color-danger: #c06767;
+  --radius: 0.25rem;
+  --font-sans: 'Motiva Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Courier New', monospace;
+}

@@ -1,0 +1,16 @@
+{
+  "app_id": "730",
+  "name": "Counter-Strike 2",
+  "rating": "borked",
+  "last_tested_wine": "9.14-staging",
+  "last_tested_date": "2026-07-15",
+  "graphics": {
+    "backend": "d3dmetal",
+    "notes": "VAC (Valve Anti-Cheat) does not work under Wine. Game launches but cannot play on VAC-secured servers."
+  },
+  "fixes": [],
+  "known_issues": [
+    "VAC anti-cheat is incompatible with Wine; only community servers without VAC work",
+    "D3D12 path requires D3DMetal; DXVK path has rendering artifacts"
+  ]
+}

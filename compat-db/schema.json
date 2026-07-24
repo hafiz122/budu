@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gamerunner.app/compat-entry.schema.json",
+  "title": "GameRunner Compatibility Entry",
+  "type": "object",
+  "required": ["app_id", "name", "rating"],
+  "properties": {
+    "app_id": {
+      "type": "string",
+      "description": "Steam App ID"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable game name"
+    },
+    "rating": {
+      "type": "string",
+      "enum": ["platinum", "gold", "silver", "bronze", "borked", "unknown"],
+      "description": "Compatibility rating"
+    },
+    "last_tested_wine": {
+      "type": "string",
+      "description": "Wine version last tested"
+    },
+    "last_tested_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date last tested (YYYY-MM-DD)"
+    },
+    "graphics": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "description": "Recommended graphics backend"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Performance notes"
+        }
+      }
+    },
+    "fixes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["dll_override", "env", "launch_option", "registry", "winetricks"]
+          },
+          "dll": { "type": "string" },
+          "mode": { "type": "string" },
+          "key": { "type": "string" },
+          "value": { "type": "string" },
+          "verb": { "type": "string" }
+        }
+      }
+    },
+    "known_issues": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Known issues with this game"
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicehash/tauri/dev/crates/tauri-config-schema/schema.json",
+  "productName": "GameRunner",
+  "version": "0.1.0",
+  "identifier": "com.gamerunner.app",
+  "build": {
+    "frontendDist": "../ui/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev --prefix /Users/d3x/gamerunner/ui",
+    "beforeBuildCommand": "npm run build --prefix /Users/d3x/gamerunner/ui"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "GameRunner",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "transparent": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ],
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": true
+    },
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' https://*; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": {
+      "../compat-db/**/*.json": "compat-db/"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png"
+    ],
+    "category": "Games",
+    "shortDescription": "Run Windows games on macOS",
+    "longDescription": "GameRunner lets you run Windows games from your Steam library on Apple Silicon Macs using Wine and graphics translation layers.",
+    "macOS": {
+      "frameworks": [],
+      "minimumSystemVersion": "14.0",
+      "entitlements": null
+    }
+  },
+  "plugins": {}
+}

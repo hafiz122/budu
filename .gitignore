@@ -1,0 +1,25 @@
+# macOS release
+
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Dependencies
+node_modules/
+
+# Build output
+src-tauri/target/
+ui/dist/
+
+# macOS metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+__MACOSX
+
+# Environment
+.env
+.env.local
+*.log

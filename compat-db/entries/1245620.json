@@ -1,0 +1,21 @@
+{
+  "app_id": "1245620",
+  "name": "Elden Ring",
+  "rating": "gold",
+  "last_tested_wine": "9.14-staging",
+  "last_tested_date": "2026-07-15",
+  "graphics": {
+    "backend": "d3dmetal",
+    "notes": "D3DMetal gives 50-60fps on M2 Max. DXVK stutters during particle effects. Disable ray tracing in settings."
+  },
+  "fixes": [
+    {"type": "dll_override", "dll": "d3dcompiler_47", "mode": "native"},
+    {"type": "env", "key": "DXVK_ASYNC", "value": "1"},
+    {"type": "launch_option", "value": "-windowed"}
+  ],
+  "known_issues": [
+    "Easy Anti-Cheat (EAC) does not work under Wine; online play is unavailable",
+    "Cutscene audio can desync on M1, fixed on M2 and newer",
+    "First launch shader compilation causes stutter for 2-3 minutes"
+  ]
+}
