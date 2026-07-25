@@ -41,8 +41,6 @@ export function LibraryView({
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const [log, setLog] = useState<string[]>([]);
   const logRef = useRef<HTMLDivElement>(null);
-  const [steamUser, setSteamUser] = useState('');
-  const [steamPass, setSteamPass] = useState('');
   const [pendingExe, setPendingExe] = useState<string | null>(null);
   const [selectedBottleId, setSelectedBottleId] = useState('');
   const [newBottleName, setNewBottleName] = useState('');
@@ -99,11 +97,14 @@ export function LibraryView({
   };
 
   const handleOpenTerminal = async () => {
+    const id = appIdInput.trim();
+    if (!id) return;
     setMessage(null);
-    addLog('> Opening SteamCMD terminal...');
+    addLog(`> Opening SteamCMD Terminal for App ${id}...`);
     try {
-      await openSteamCmdTerminal();
-      addLog('> Terminal opened. Type: login YOUR_USERNAME');
+      const instructions = await openSteamCmdTerminal(id);
+      addLog(`> ${instructions}`);
+      setMessage({ text: instructions, ok: true });
     } catch (err) {
       setMessage({ text: String(err), ok: false });
     }
@@ -157,7 +158,7 @@ export function LibraryView({
     setBusy(true); setMessage(null); setLog([]);
     addLog(`> Downloading App ${id}...`);
     try {
-      await downloadGame(id, steamUser || undefined, steamPass || undefined);
+      await downloadGame(id);
       addLog(`> App ${id} complete.`);
       setMessage({ text: `Downloaded.`, ok: true });
       setAppIdInput('');
@@ -224,13 +225,7 @@ export function LibraryView({
           <div className="mb-3 flex items-center justify-between">
             <div>
               <h2 className="text-[13px] font-semibold text-white/90">Download from Steam</h2>
-              <p className="mt-0.5 text-[11px] text-white/35">Credentials are optional for anonymous downloads.</p>
-            </div>
-            <div className="flex gap-2">
-              <input type="text" placeholder="Username" value={steamUser}
-                onChange={(e) => setSteamUser(e.target.value)} className={cn(inputClass, 'w-36')} />
-              <input type="password" placeholder="Password" value={steamPass}
-                onChange={(e) => setSteamPass(e.target.value)} className={cn(inputClass, 'w-36')} />
+              <p className="mt-0.5 text-[11px] text-white/35">Anonymous downloads run in Budu. Owned games sign in directly through SteamCMD Terminal.</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -239,7 +234,10 @@ export function LibraryView({
               onKeyDown={(e) => e.key === 'Enter' && handleDownload()}
               className={cn(inputClass, 'flex-1')} />
             <Button onClick={handleDownload} disabled={busy || !appIdInput.trim()}>
-              {busy ? 'Downloading…' : 'Download'}
+              {busy ? 'Downloading…' : 'Anonymous Download'}
+            </Button>
+            <Button variant="secondary" onClick={handleOpenTerminal} disabled={busy || !appIdInput.trim()}>
+              Download in Terminal
             </Button>
           </div>
         </div>

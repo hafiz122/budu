@@ -498,8 +498,25 @@ pub async fn steamcmd_install(
     Ok(())
 }
 
+fn steamcmd_terminal_instructions(app_id: &str, install: &Path) -> String {
+    format!(
+        "In SteamCMD, enter these commands one at a time:\n\
+         force_install_dir \"{}\"\n\
+         login YOUR_STEAM_USERNAME\n\
+         app_update {app_id} validate\n\
+         quit\n\n\
+         Do not paste your password into Budu. SteamCMD will ask for it directly. \
+         When the download finishes, return to Budu and click Refresh.",
+        install.display()
+    )
+}
+
 #[tauri::command]
-pub async fn steamcmd_open_terminal(_state: tauri::State<'_, AppState>) -> Result<(), String> {
+pub async fn steamcmd_open_terminal(
+    app_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let install = state.steam_bridge.prepare_steamcmd_download(&app_id)?;
     Command::new("osascript")
         .arg("-e")
         .arg(format!(
@@ -508,14 +525,12 @@ pub async fn steamcmd_open_terminal(_state: tauri::State<'_, AppState>) -> Resul
         ))
         .spawn()
         .map_err(|e| e.to_string())?;
-    Ok(())
+    Ok(steamcmd_terminal_instructions(&app_id, &install))
 }
 
 #[tauri::command]
 pub async fn steamcmd_download(
     app_id: String,
-    username: Option<String>,
-    password: Option<String>,
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
@@ -526,11 +541,7 @@ pub async fn steamcmd_download(
         .arg("windows")
         .arg("+force_install_dir")
         .arg(install.to_string_lossy().to_string());
-    if let (Some(u), Some(p)) = (&username, &password) {
-        cmd.arg("+login").arg(u).arg(p);
-    } else {
-        cmd.arg("+login").arg("anonymous");
-    }
+    cmd.arg("+login").arg("anonymous");
     cmd.arg("+app_update")
         .arg(&app_id)
         .arg("validate")
@@ -830,6 +841,15 @@ mod tests {
         config::{AppConfig, GraphicsBackend},
     };
     use tempfile::TempDir;
+
+    #[test]
+    fn terminal_instructions_never_include_a_password() {
+        let instructions = steamcmd_terminal_instructions("480", Path::new("/tmp/download"));
+
+        assert!(instructions.contains("app_update 480 validate"));
+        assert!(instructions.contains("login YOUR_STEAM_USERNAME"));
+        assert!(!instructions.contains("YOUR_STEAM_PASSWORD"));
+    }
 
     #[test]
     fn managed_game_prefix_requires_shared_steam_shutdown() {

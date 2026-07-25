@@ -2,10 +2,24 @@
 src-tauri/target/
 ui/dist/
 ui/node_modules/
+ui/*.tsbuildinfo
+ui/vite.config.js
+ui/vite.config.d.ts
 runtime/dist/*
 !runtime/dist/steamwebhelper-shim.exe
 !runtime/dist/wine-11.10/
 !runtime/dist/wine-11.10/**
+
+# Local game data and caches
+*.dxvk-cache
+*.wined3d-cache
+/bottles/
+/steamapps/
+/userdata/
+
+# Files kept locally and never published
+/private/
+/.private/
 
 # Wine builds (large)
 wine/9.*/
@@ -18,9 +32,10 @@ wine/build/
 .LSOverride
 __MACOSX
 
-# Environment
-.env
-.env.local
+# Environment and local overrides
+.env*
+!.env.example
+*.local
 *.log
 
 # IDE

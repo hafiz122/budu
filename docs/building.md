@@ -44,7 +44,7 @@ npm run test
 
 ## Steam shim
 
-The checked-in PE binary is reproducible from its MIT-licensed C source:
+The checked-in PE binary is reproducible from its GPL-3.0-only C source:
 
 ```bash
 bash scripts/build-steam-shim.sh

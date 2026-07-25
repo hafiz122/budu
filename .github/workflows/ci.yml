@@ -41,8 +41,15 @@ jobs:
       - name: Rust lint
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
 
+      - name: Rust dependency audit
+        working-directory: src-tauri
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit
+
       - name: Frontend checks
         run: |
           npm run build --prefix ui
           npm run lint --prefix ui
           npm run test --prefix ui
+          npm audit --prefix ui --audit-level=high

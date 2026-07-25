@@ -8,6 +8,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 import {
   getOrCreateSteamBottle,
+  downloadGame,
   launchSteamGame,
   runExe,
 } from './tauri';
@@ -46,5 +47,13 @@ describe('Tauri command wrappers', () => {
       appId: '730',
       bottleId: 'steam-730',
     });
+  });
+
+  it('downloads anonymously with only the Steam App ID', async () => {
+    invokeMock.mockResolvedValue(undefined);
+
+    await downloadGame('480');
+
+    expect(invokeMock).toHaveBeenCalledWith('steamcmd_download', { appId: '480' });
   });
 });

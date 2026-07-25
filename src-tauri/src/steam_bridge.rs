@@ -277,7 +277,17 @@ impl SteamBridge {
         let mut manifest_map: std::collections::HashMap<String, (String, String)> =
             std::collections::HashMap::new();
 
-        for manifest_dir in [&steamapps, &common_dir.join("steamapps")] {
+        let staged_manifest_dirs = std::fs::read_dir(common_dir.join(".gamerunner-downloads"))
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path().join("steamapps"))
+            .collect::<Vec<_>>();
+        let mut manifest_dirs = vec![steamapps.clone(), common_dir.join("steamapps")];
+        manifest_dirs.extend(staged_manifest_dirs);
+
+        for manifest_dir in manifest_dirs {
             if let Ok(entries) = std::fs::read_dir(manifest_dir) {
                 for entry in entries.flatten() {
                     let fname = entry.file_name();
@@ -307,6 +317,46 @@ impl SteamBridge {
         }
 
         let mut games = Vec::new();
+
+        let staged_root = common_dir.join(".gamerunner-downloads");
+        if let Ok(entries) = std::fs::read_dir(&staged_root) {
+            for entry in entries.flatten() {
+                let install_dir = entry.path();
+                if !install_dir.is_dir() {
+                    continue;
+                }
+                let manifest = install_dir.join("steamapps").join(format!(
+                    "appmanifest_{}.acf",
+                    entry.file_name().to_string_lossy()
+                ));
+                let Ok(contents) = std::fs::read_to_string(manifest) else {
+                    continue;
+                };
+                let Ok(vdf) = self.parse_vdf(&contents) else {
+                    continue;
+                };
+                let app_id = vdf
+                    .iter()
+                    .find(|entry| entry.key == "appid")
+                    .map(|entry| entry.value.clone())
+                    .unwrap_or_default();
+                let name = vdf
+                    .iter()
+                    .find(|entry| entry.key == "name")
+                    .map(|entry| entry.value.clone())
+                    .unwrap_or_default();
+                if app_id.is_empty() || name.is_empty() {
+                    continue;
+                }
+                games.push(SteamApp {
+                    size_bytes: dir_size(&install_dir),
+                    installed: true,
+                    app_id,
+                    install_dir,
+                    name,
+                });
+            }
+        }
 
         if common_dir.exists() {
             for entry in std::fs::read_dir(&common_dir)
@@ -654,6 +704,36 @@ mod tests {
             .join("appmanifest_648800.acf")
             .is_file());
         assert!(!staging.exists());
+    }
+
+    #[test]
+    fn lists_completed_terminal_downloads_before_normalization() {
+        use tempfile::TempDir;
+        let tmp = TempDir::new().unwrap();
+        let config = AppConfig {
+            data_dir: tmp.path().join("data"),
+            bottles_dir: tmp.path().join("bottles"),
+            ..Default::default()
+        };
+        let bridge = SteamBridge::new(config);
+        let staging = bridge.prepare_steamcmd_download("648800").unwrap();
+        std::fs::write(staging.join("Raft.exe"), b"exe").unwrap();
+        std::fs::write(
+            staging.join("steamapps/appmanifest_648800.acf"),
+            r#""AppState"
+{
+    "appid" "648800"
+    "name" "Raft"
+    "installdir" "Raft"
+}"#,
+        )
+        .unwrap();
+
+        let games = bridge.list_installed_games().unwrap();
+
+        assert_eq!(games.len(), 1);
+        assert_eq!(games[0].app_id, "648800");
+        assert_eq!(games[0].install_dir, staging);
     }
 
     #[test]

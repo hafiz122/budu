@@ -81,16 +81,12 @@ export async function installSteamCmd(): Promise<void> {
   return invoke('steamcmd_install');
 }
 
-export async function openSteamCmdTerminal(): Promise<void> {
-  return invoke('steamcmd_open_terminal');
+export async function openSteamCmdTerminal(appId: string): Promise<string> {
+  return invoke('steamcmd_open_terminal', { appId });
 }
 
-export async function downloadGame(
-  appId: string,
-  username?: string,
-  password?: string,
-): Promise<void> {
-  return invoke('steamcmd_download', { appId, username, password });
+export async function downloadGame(appId: string): Promise<void> {
+  return invoke('steamcmd_download', { appId });
 }
 
 export async function launchSteamClient(): Promise<void> {

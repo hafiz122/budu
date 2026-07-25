@@ -1,10 +1,10 @@
 # Third-party notices
 
 Budu's source code and SteamWebHelper compatibility shim are distributed
-under the MIT License.
+under the GNU General Public License, version 3.0 only.
 
 Budu can download the following independent runtime components. They are
-not relicensed under MIT.
+not relicensed under GPL-3.0-only.
 
 ## Patched Wine Staging 11.10
 
