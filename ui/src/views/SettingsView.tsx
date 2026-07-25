@@ -74,7 +74,7 @@ export function SettingsView() {
             <div className="space-y-1.5">
               {wineVersions.length === 0 && (
                 <p className="text-[12px] text-white/45">
-                  No Wine found. Place at: <code className="rounded-[2px] bg-[#111113] px-1.5 py-0.5 font-mono text-[10px] text-white/55">~/.gamerunner/wine/11.10-staging/</code>
+                  No managed Wine runtime installed yet. Use Install Wine below.
                 </p>
               )}
               {wineVersions.map((wv) => (

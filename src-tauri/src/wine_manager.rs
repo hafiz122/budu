@@ -188,12 +188,10 @@ impl WineManager {
             }
         }
 
-        Err(format!(
-            "No Wine installation found.\n\n\
-             Install via Homebrew:\n  brew install wine-stable\n\n\
-             Then restart Budu.\n\n\
-             Or place a Wine build at:\n  ~/.gamerunner/wine/{version}/bin/wine64"
-        ))
+        Err("No Wine installation found.\n\n\
+             Open Budu Settings and select Install Wine.\n\n\
+             Budu downloads and manages the compatible Wine runtime automatically."
+            .into())
     }
 
     /// Resolve the configured open-source Wine runner for Steam.
@@ -572,7 +570,11 @@ mod tests {
         // May find system Wine or not; if not found, error should be helpful
         match manager.resolve_wine_bin("nonexistent") {
             Ok(_) => {} // System Wine found, that's fine
-            Err(e) => assert!(e.contains("Homebrew") || e.contains("No Wine")),
+            Err(e) => {
+                assert!(e.contains("No Wine"));
+                assert!(e.contains("Budu Settings"));
+                assert!(!e.contains("Homebrew"));
+            }
         }
     }
 

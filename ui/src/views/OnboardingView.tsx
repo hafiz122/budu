@@ -10,9 +10,9 @@ interface OnboardingViewProps {
 
 const STEPS = [
   { title: 'Welcome to Budu', description: 'Run your Windows Steam games on Apple Silicon Macs. This wizard will help you get started.', Icon: Gamepad2 },
-  { title: 'Install Wine', description: 'Wine translates Windows API calls to macOS. Install via Homebrew: brew install wine-stable', Icon: Monitor },
+  { title: 'Install Wine', description: 'Wine translates Windows API calls to macOS. Install Budu’s managed Wine runtime from Settings.', Icon: Monitor },
   { title: 'Set Up Steam', description: 'Budu uses SteamCMD to download your games. Click Setup SteamCMD on the Library page.', Icon: Wrench },
-  { title: 'Graphics Translation', description: 'Install DXVK for DirectX 11 to Vulkan to Metal translation. Essential for modern games.', Icon: Cpu },
+  { title: 'Graphics Translation', description: 'Budu configures its graphics translation runtime with Wine. This is essential for modern games.', Icon: Cpu },
   { title: "You're Ready", description: 'Download games by App ID, then click Play or use Run .exe to launch any Windows executable.', Icon: Check },
 ];
 
