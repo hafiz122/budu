@@ -361,6 +361,56 @@ fn configure_wine_runner(
     Ok(())
 }
 
+fn is_separate_steam_prefix(shared_prefix: &Path, game_prefix: &Path) -> bool {
+    let shared = shared_prefix
+        .canonicalize()
+        .unwrap_or_else(|_| shared_prefix.to_path_buf());
+    let game = game_prefix
+        .canonicalize()
+        .unwrap_or_else(|_| game_prefix.to_path_buf());
+    shared != game
+}
+
+fn stop_wine_prefix(
+    wine_manager: &WineManager,
+    wine_version: &str,
+    prefix: &Path,
+) -> Result<(), String> {
+    let wineserver = wine_manager.resolve_wineserver_bin(wine_version)?;
+    let mut command = Command::new(&wineserver);
+    command.env_clear();
+    inherit_safe_host_environment(&mut command);
+    configure_wine_runner(&mut command, &wineserver, prefix)?;
+    let output = command
+        .arg("-k")
+        .output()
+        .map_err(|error| format!("Failed to stop the existing Steam session: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Failed to stop the existing Steam session: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
+}
+
+/// Steam's files are shared to save disk space, but its Wine prefix must be
+/// exclusive to the game being launched. Otherwise a shared-prefix Steam GUI
+/// can remain logged in and receive multiplayer invites intended for the game.
+fn stop_shared_steam_before_game_launch(state: &AppState, bottle_id: &str) -> Result<(), String> {
+    let game_prefix = state.bottle_manager.resolve_bottle_path(bottle_id)?;
+    let shared_prefix = state.steam_bridge.steam_bottle_path();
+    if !is_separate_steam_prefix(&shared_prefix, &game_prefix) {
+        return Ok(());
+    }
+    stop_wine_prefix(
+        &state.wine_manager,
+        &state.config.default_wine_version,
+        &shared_prefix,
+    )
+}
+
 fn prepare_steam_ui(state: &AppState, steam_executable: &Path) -> Result<(), String> {
     let shim = steam_compat::resolve_shim(state.resource_dir.as_deref())?;
     steam_compat::install_for_steam(steam_executable, &shim)?;
@@ -539,6 +589,10 @@ pub async fn run_exe(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
+    let _steam_session_guard = state
+        .steam_session_lock
+        .lock()
+        .map_err(|_| "Steam launch coordination is unavailable".to_string())?;
     let exe = std::path::PathBuf::from(&path);
 
     let _ = app_handle.emit(
@@ -550,6 +604,11 @@ pub async fn run_exe(
     );
     let steam_app_id = state.steam_bridge.app_id_for_executable(&exe);
     let spec = if let Some(app_id) = steam_app_id.as_deref() {
+        let _ = app_handle.emit(
+            "steam:install-progress",
+            "Closing Budu's separate Steam session...",
+        );
+        stop_shared_steam_before_game_launch(&state, &bottle_id)?;
         let shared_prefix = state
             .steam_bridge
             .prefix_for_executable(&exe)
@@ -648,6 +707,10 @@ pub async fn steam_install(
 
 #[tauri::command]
 pub async fn steam_run_client(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let _steam_session_guard = state
+        .steam_session_lock
+        .lock()
+        .map_err(|_| "Steam launch coordination is unavailable".to_string())?;
     let exe = state.steam_bridge.steam_exe_path();
     if !exe.exists() {
         return Err("Steam GUI not installed".into());
@@ -656,6 +719,13 @@ pub async fn steam_run_client(state: tauri::State<'_, AppState>) -> Result<(), S
         .wine_manager
         .resolve_steam_wine_bin(&state.config.default_wine_version)?;
     let prefix = state.steam_bridge.steam_bottle_path();
+    // Opening the Steam UI twice in its shared prefix creates two clients
+    // under the same account. Replace any earlier shared-prefix client first.
+    stop_wine_prefix(
+        &state.wine_manager,
+        &state.config.default_wine_version,
+        &prefix,
+    )?;
     prepare_steam_ui(&state, &exe)?;
     let mut command = Command::new(&wine);
     command.env_clear();
@@ -676,6 +746,10 @@ pub async fn steam_launch_game(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<String, String> {
+    let _steam_session_guard = state
+        .steam_session_lock
+        .lock()
+        .map_err(|_| "Steam launch coordination is unavailable".to_string())?;
     let games = state.steam_bridge.list_installed_games()?;
     let g = games
         .iter()
@@ -692,6 +766,12 @@ pub async fn steam_launch_game(
             "Bottle '{bottle_id}' is not assigned to Steam App {app_id}"
         ));
     }
+
+    let _ = app_handle.emit(
+        "steam:install-progress",
+        "Closing Budu's separate Steam session...",
+    );
+    stop_shared_steam_before_game_launch(&state, &bottle_id)?;
 
     let shared_steam_executable = state.steam_bridge.steam_exe_path();
     let bottle_prefix = state.bottle_manager.resolve_bottle_path(&bottle_id)?;
@@ -750,6 +830,18 @@ mod tests {
         config::{AppConfig, GraphicsBackend},
     };
     use tempfile::TempDir;
+
+    #[test]
+    fn managed_game_prefix_requires_shared_steam_shutdown() {
+        let tmp = TempDir::new().unwrap();
+        let shared = tmp.path().join("steam");
+        let game = tmp.path().join("bottles/raft");
+        std::fs::create_dir_all(&shared).unwrap();
+        std::fs::create_dir_all(&game).unwrap();
+
+        assert!(is_separate_steam_prefix(&shared, &game));
+        assert!(!is_separate_steam_prefix(&shared, &shared));
+    }
 
     #[test]
     #[cfg(unix)]

@@ -32,6 +32,10 @@ pub struct AppState {
     pub steam_bridge: SteamBridge,
     pub runtime_manager: RuntimeManager,
     pub process_supervisor: Arc<Mutex<ProcessSupervisor>>,
+    /// Serializes transitions between Budu's shared Steam prefix and a
+    /// per-game Steam session. Two Wine Steam clients signed into the same
+    /// account can send invites to the wrong client.
+    pub steam_session_lock: Mutex<()>,
     pub compat_engine: Mutex<CompatEngine>,
 }
 
@@ -68,6 +72,7 @@ impl AppState {
             steam_bridge: SteamBridge::new(config.clone()),
             runtime_manager: RuntimeManager::new(config.clone()),
             process_supervisor: Arc::new(Mutex::new(ProcessSupervisor::new())),
+            steam_session_lock: Mutex::new(()),
             compat_engine: Mutex::new(compat_engine),
             config,
         })
