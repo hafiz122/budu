@@ -2,7 +2,6 @@
   <img src="ui/src/assets/budu-logo.svg" alt="Budu" width="560">
 </p>
 [![Build status](https://github.com/hafiz122/budu/actions/workflows/ci.yml/badge.svg)](https://github.com/hafiz122/budu/actions/workflows/ci.yml)
-
 Budu is an open-source macOS launcher for Windows Steam games. It manages
 isolated Wine bottles, downloads Windows depots with SteamCMD, and configures an
 open Direct3D-to-Metal stack for Apple Silicon.
