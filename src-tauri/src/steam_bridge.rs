@@ -96,6 +96,19 @@ impl SteamBridge {
             .join("steamcmd.exe")
     }
 
+    /// Locate the host SteamCMD executable. Finder-launched macOS apps do not
+    /// reliably inherit the user's shell PATH, so check Homebrew's standard
+    /// Apple Silicon and Intel locations first.
+    pub fn steamcmd_bin_path(&self) -> Option<PathBuf> {
+        find_host_executable(
+            "steamcmd",
+            &[
+                PathBuf::from("/opt/homebrew/bin/steamcmd"),
+                PathBuf::from("/usr/local/bin/steamcmd"),
+            ],
+        )
+    }
+
     /// Prepare an isolated SteamCMD destination for an app.
     ///
     /// SteamCMD writes game files directly into `force_install_dir`; pointing
@@ -190,7 +203,7 @@ impl SteamBridge {
         SteamStatus {
             bottle_created: self.steam_bottle_path().exists(),
             steam_installed: self.steam_exe_path().exists(),
-            steamcmd_installed: std::path::PathBuf::from("/opt/homebrew/bin/steamcmd").exists(),
+            steamcmd_installed: self.steamcmd_bin_path().is_some(),
             steam_running: false,
             logged_in_user: None,
         }
@@ -431,6 +444,20 @@ impl SteamBridge {
             .map(std::path::Path::to_path_buf)
             .filter(|prefix| steam_executable_in(prefix).is_some())
     }
+}
+
+fn find_host_executable(name: &str, standard_paths: &[PathBuf]) -> Option<PathBuf> {
+    standard_paths
+        .iter()
+        .find(|path| path.is_file())
+        .cloned()
+        .or_else(|| {
+            std::env::var_os("PATH").and_then(|path| {
+                std::env::split_paths(&path)
+                    .map(|directory| directory.join(name))
+                    .find(|candidate| candidate.is_file())
+            })
+        })
 }
 
 fn steam_executable_in(prefix: &std::path::Path) -> Option<PathBuf> {

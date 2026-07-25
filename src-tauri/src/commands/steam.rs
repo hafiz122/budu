@@ -14,7 +14,46 @@ use crate::{
 };
 use tauri::Emitter;
 
-const STEAMCMD_BIN: &str = "/opt/homebrew/bin/steamcmd";
+const HOMEBREW_BIN_PATHS: [&str; 2] = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"];
+
+fn find_host_executable(name: &str, standard_paths: &[&str]) -> Option<PathBuf> {
+    standard_paths
+        .iter()
+        .map(PathBuf::from)
+        .find(|path| path.is_file())
+        .or_else(|| {
+            std::env::var_os("PATH").and_then(|path| {
+                std::env::split_paths(&path)
+                    .map(|directory| directory.join(name))
+                    .find(|candidate| candidate.is_file())
+            })
+        })
+}
+
+fn homebrew_not_found_error() -> String {
+    format!(
+        "Homebrew was not found. Budu checked {} and your app PATH. \\\n+         Install Homebrew from https://brew.sh, then choose Setup SteamCMD again.",
+        HOMEBREW_BIN_PATHS.join(" and ")
+    )
+}
+
+fn steamcmd_not_found_error() -> String {
+    "SteamCMD was not found after setup. Budu checked /opt/homebrew/bin/steamcmd, \\
+     /usr/local/bin/steamcmd, and your app PATH. Reopen Budu after installing SteamCMD, \\
+     then try again."
+        .into()
+}
+
+fn command_failure_details(output: &std::process::Output) -> String {
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    match (stdout.is_empty(), stderr.is_empty()) {
+        (true, true) => format!("Process exited with status {:?}.", output.status.code()),
+        (false, true) => stdout,
+        (true, false) => stderr,
+        (false, false) => format!("{stderr}\n{stdout}"),
+    }
+}
 
 fn run_with_progress(cmd: &mut Command, handle: &tauri::AppHandle) -> Result<(), String> {
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -483,17 +522,27 @@ pub async fn steamcmd_install(
     let steam_bottle = state.steam_bridge.steam_bottle_path();
     std::fs::create_dir_all(&steam_bottle).map_err(|e| format!("mkdir: {e}"))?;
 
-    if std::path::PathBuf::from(STEAMCMD_BIN).exists() {
+    if state.steam_bridge.steamcmd_bin_path().is_some() {
         return Ok(());
     }
+    let brew =
+        find_host_executable("brew", &HOMEBREW_BIN_PATHS).ok_or_else(homebrew_not_found_error)?;
     let _ = app_handle.emit("steam:install-progress", "Installing SteamCMD...");
-    let s = Command::new("brew")
+    let output = Command::new(&brew)
         .args(["install", "steamcmd"])
-        .status()
-        .map_err(|e| e.to_string())?;
-    if !s.success() {
-        return Err("brew install steamcmd failed".into());
+        .output()
+        .map_err(|error| format!("Could not run {}: {error}", brew.display()))?;
+    if !output.status.success() {
+        return Err(format!(
+            "SteamCMD setup failed while running `{}` install steamcmd:\n{}",
+            brew.display(),
+            command_failure_details(&output)
+        ));
     }
+    state
+        .steam_bridge
+        .steamcmd_bin_path()
+        .ok_or_else(steamcmd_not_found_error)?;
     let _ = app_handle.emit("steam:installed", ());
     Ok(())
 }
@@ -517,11 +566,15 @@ pub async fn steamcmd_open_terminal(
     state: tauri::State<'_, AppState>,
 ) -> Result<String, String> {
     let install = state.steam_bridge.prepare_steamcmd_download(&app_id)?;
+    let steamcmd = state
+        .steam_bridge
+        .steamcmd_bin_path()
+        .ok_or_else(steamcmd_not_found_error)?;
     Command::new("osascript")
         .arg("-e")
         .arg(format!(
             "tell app \"Terminal\" to do script \"{}; echo '--- Type quit to exit ---'; read\"",
-            STEAMCMD_BIN
+            steamcmd.display()
         ))
         .spawn()
         .map_err(|e| e.to_string())?;
@@ -535,8 +588,12 @@ pub async fn steamcmd_download(
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let install = state.steam_bridge.prepare_steamcmd_download(&app_id)?;
+    let steamcmd = state
+        .steam_bridge
+        .steamcmd_bin_path()
+        .ok_or_else(steamcmd_not_found_error)?;
     let _ = app_handle.emit("steam:install-progress", format!("download {app_id}..."));
-    let mut cmd = Command::new(STEAMCMD_BIN);
+    let mut cmd = Command::new(steamcmd);
     cmd.arg("+@sSteamCmdForcePlatformType")
         .arg("windows")
         .arg("+force_install_dir")
@@ -849,6 +906,15 @@ mod tests {
         assert!(instructions.contains("app_update 480 validate"));
         assert!(instructions.contains("login YOUR_STEAM_USERNAME"));
         assert!(!instructions.contains("YOUR_STEAM_PASSWORD"));
+    }
+
+    #[test]
+    fn missing_homebrew_error_names_the_locations_that_were_checked() {
+        let error = homebrew_not_found_error();
+
+        assert!(error.contains("/opt/homebrew/bin/brew"));
+        assert!(error.contains("/usr/local/bin/brew"));
+        assert!(error.contains("https://brew.sh"));
     }
 
     #[test]
