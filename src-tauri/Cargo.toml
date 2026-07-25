@@ -1,6 +1,6 @@
 [package]
 name = "budu"
-version = "0.1.1"
+version = "0.1.2"
 description = "Run Windows Steam games on Apple Silicon Macs"
 authors = []
 edition = "2021"
