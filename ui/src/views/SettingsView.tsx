@@ -30,21 +30,24 @@ export function SettingsView() {
   };
 
   return (
-    <div className="flex flex-col h-full max-w-2xl">
-      <h1 className="text-[13px] font-bold uppercase tracking-wider text-[#e0e0d0] text-shadow mb-4">Settings</h1>
+    <div className="flex h-full max-w-3xl flex-col">
+      <div className="mb-5">
+        <h1 className="text-[26px] font-bold tracking-[-0.035em] text-white">Settings</h1>
+        <p className="mt-1 text-[12px] text-white/40">Manage appearance and game runtimes.</p>
+      </div>
 
       {message && (
-        <div className={`mb-3 px-3 py-2 text-[11px] font-bold border-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ${
-          message.ok ? 'bg-[#2a3a1a] border-[#5a8f3c] text-[#8cc85c]' : 'bg-[#3a1a1a] border-[#aa3333] text-[#ff6666]'
+        <div className={`mac-notice mb-4 ${
+          message.ok ? 'mac-notice-success' : 'mac-notice-danger'
         }`}>
           {message.text}
-          <button className="ml-2 underline opacity-70 hover:opacity-100" onClick={() => setMessage(null)}>Dismiss</button>
+          <button className="ml-2 font-semibold opacity-70 hover:opacity-100" onClick={() => setMessage(null)}>Dismiss</button>
         </div>
       )}
 
-      <div className="space-y-4 overflow-auto flex-1">
+      <div className="flex-1 space-y-4 overflow-auto pb-4">
         <Card>
-          <CardHeader><h2 className="text-[11px] font-bold uppercase tracking-wider">Appearance</h2></CardHeader>
+          <CardHeader><h2>Appearance</h2></CardHeader>
           <CardContent className="space-y-3">
             <Row label="Theme">
               <div className="flex gap-1.5">
@@ -66,42 +69,42 @@ export function SettingsView() {
         </Card>
 
         <Card>
-          <CardHeader><h2 className="text-[11px] font-bold uppercase tracking-wider">Wine Versions</h2></CardHeader>
+          <CardHeader><h2>Wine Versions</h2></CardHeader>
           <CardContent>
             <div className="space-y-1.5">
               {wineVersions.length === 0 && (
-                <p className="text-[11px] text-[#909080]">
-                  No Wine found. Place at: <code className="px-1 py-0.5 bg-[#222] text-[10px] font-mono">~/.gamerunner/wine/9.14-staging/</code>
+                <p className="text-[12px] text-white/45">
+                  No Wine found. Place at: <code className="rounded-[2px] bg-[#111113] px-1.5 py-0.5 font-mono text-[10px] text-white/55">~/.gamerunner/wine/11.10-staging/</code>
                 </p>
               )}
               {wineVersions.map((wv) => (
-                <div key={wv.version} className="flex items-center justify-between py-0.5">
+                <div key={wv.version} className="flex items-center justify-between rounded-[2px] px-1 py-1.5">
                   <div>
-                    <span className="text-[11px] text-[#e0e0d0] font-bold">{wv.version}</span>
-                    {wv.is_default && <span className="ml-1.5 text-[10px] text-[#7c9c2e] font-bold uppercase">(default)</span>}
+                    <span className="text-[12px] font-medium text-white/85">{wv.version}</span>
+                    {wv.is_default && <span className="ml-2 text-[10px] font-semibold text-[#69b4ff]">Default</span>}
                   </div>
-                  <span className="text-[10px] text-[#808070]">{wv.installed ? wv.arch : 'not installed'}</span>
+                  <span className="text-[11px] text-white/35">{wv.installed ? wv.arch : 'Not installed'}</span>
                 </div>
               ))}
               <Button variant="secondary" size="sm" disabled={installing !== null}
-                onClick={() => handleInstallWine('9.14-staging')}>
-                {installing ? '...' : 'Install 9.14-staging'}
+                onClick={() => handleInstallWine('11.10-staging')}>
+                {installing ? '...' : 'Install Wine'}
               </Button>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader><h2 className="text-[11px] font-bold uppercase tracking-wider">Graphics Backends</h2></CardHeader>
+          <CardHeader><h2>Graphics Backends</h2></CardHeader>
           <CardContent>
             <div className="space-y-2.5">
               {backends.map((b) => (
-                <div key={b.backend}>
+                <div key={b.backend} className="rounded-[3px] bg-[#18181a] px-3 py-2.5">
                   <div className="flex items-center gap-2">
-                    <span className={`w-1.5 h-1.5 border-2 ${b.installed ? 'bg-[#5a8f3c] border-[#7caf3c]' : 'bg-[#555] border-[#444]'}`} />
-                    <span className="text-[11px] font-bold text-[#e0e0d0]">{b.name}</span>
+                    <span className={`h-2 w-2 rounded-full ${b.installed ? 'bg-[#30d158]' : 'bg-[#55555a]'}`} />
+                    <span className="text-[12px] font-medium text-white/85">{b.name}</span>
                   </div>
-                  <p className="text-[10px] text-[#808070] mt-0.5 ml-3.5">{b.description}</p>
+                  <p className="ml-4 mt-1 text-[11px] leading-relaxed text-white/35">{b.description}</p>
                 </div>
               ))}
             </div>
@@ -114,8 +117,8 @@ export function SettingsView() {
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-[11px] text-[#a0a090] font-bold uppercase tracking-wide">{label}</span>
+    <div className="flex min-h-10 items-center justify-between border-b border-[#38383c] py-2 last:border-0">
+      <span className="text-[12px] font-medium text-white/60">{label}</span>
       <div>{children}</div>
     </div>
   );

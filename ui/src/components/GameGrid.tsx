@@ -11,7 +11,7 @@ interface GameGridProps {
 
 export function GameGrid({ games, compatMap, runningGames, onPlay, onSelect }: GameGridProps) {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 p-1">
+    <div className="grid grid-cols-2 gap-4 p-1 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
       {games.map((game) => (
         <GameCard
           key={game.app_id || game.name}

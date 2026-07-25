@@ -1,5 +1,5 @@
 /**
- * Theme engine for GameRunner.
+ * Theme engine for Budu.
  *
  * Themes are defined as CSS custom property sets. This module provides
  * the glue to hot-swap themes at runtime by toggling classes on <html>.

@@ -19,7 +19,7 @@ const statusVariant: Record<string, 'success' | 'warning' | 'danger' | 'default'
 export function BottleList({ bottles, onDelete, onSelect }: BottleListProps) {
   if (bottles.length === 0) {
     return (
-      <div className="text-center text-text-muted py-12 text-sm">
+      <div className="py-12 text-center text-sm text-text-muted">
         No bottles created yet. Add a game to create one.
       </div>
     );
@@ -32,14 +32,14 @@ export function BottleList({ bottles, onDelete, onSelect }: BottleListProps) {
           key={bottle.id}
           hover
           onClick={() => onSelect(bottle)}
-          className="flex items-center justify-between"
+          className="flex items-center justify-between px-4 py-3"
         >
           <div className="flex items-center gap-3">
             <div>
-              <div className="text-sm font-medium text-text-primary">
+              <div className="text-sm font-semibold text-text-primary">
                 {bottle.name}
               </div>
-              <div className="text-xs text-text-muted mt-0.5">
+              <div className="mt-0.5 text-xs text-text-muted">
                 Wine {bottle.wine_version}
                 {bottle.steam_app_id && (
                   <span className="ml-2">App {bottle.steam_app_id}</span>

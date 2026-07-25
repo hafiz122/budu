@@ -1,4 +1,0 @@
-MODULE    = msauddecmft.dll
-
-SOURCES = \
-	main.c

@@ -28,7 +28,7 @@ export interface BottleConfig {
   dependencies: { vcrun: string[]; native_dlls: string[] };
 }
 
-export type GraphicsBackend = 'd3dmetal' | 'dxvk' | 'wine3d';
+export type GraphicsBackend = 'd3dmetal' | 'dxmt' | 'dxvk' | 'wine3d';
 
 export interface GraphicsBackendInfo {
   backend: GraphicsBackend;

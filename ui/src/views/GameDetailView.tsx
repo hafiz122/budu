@@ -17,13 +17,13 @@ interface GameDetailViewProps {
 
 function ratingLabel(rating: string): { label: string; color: string } {
   const map: Record<string, { label: string; color: string }> = {
-    platinum: { label: 'Platinum', color: 'text-[#66aacc]' },
-    gold: { label: 'Gold', color: 'text-[#ccaa44]' },
-    silver: { label: 'Silver', color: 'text-[#aaaaaa]' },
-    bronze: { label: 'Bronze', color: 'text-[#cc8844]' },
-    borked: { label: 'Borked', color: 'text-[#cc4444]' },
+    platinum: { label: 'Platinum', color: 'text-[#64d2ff]' },
+    gold: { label: 'Gold', color: 'text-[#ffd60a]' },
+    silver: { label: 'Silver', color: 'text-[#d1d1d6]' },
+    bronze: { label: 'Bronze', color: 'text-[#ff9f0a]' },
+    borked: { label: 'Borked', color: 'text-[#ff6961]' },
   };
-  return map[rating] ?? { label: 'Unknown', color: 'text-[#808070]' };
+  return map[rating] ?? { label: 'Unknown', color: 'text-white/40' };
 }
 
 export function GameDetailView({ game, bottleId }: GameDetailViewProps) {
@@ -63,18 +63,17 @@ export function GameDetailView({ game, bottleId }: GameDetailViewProps) {
   const compatRating = compat ? ratingLabel(compat.rating) : null;
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-4 mb-4 drag-region">
+    <div className="flex h-full flex-col">
+      <div className="drag-region mb-6 flex items-center gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-[#2a2a2a] border-2 border-[#4a4a4a] border-t-[#5a5a5a] flex items-center justify-center
-            shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-            <Gamepad2 size={20} className="text-[#707060]" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-[3px] border border-[#38383c] bg-[#202023]">
+            <Gamepad2 size={23} strokeWidth={1.5} className="text-white/35" />
           </div>
           <div>
-            <h1 className="text-[13px] font-bold uppercase tracking-wider text-[#e0e0d0] text-shadow">{game.name}</h1>
-            <div className="flex items-center gap-2 mt-0.5">
+            <h1 className="text-[24px] font-bold tracking-[-0.035em] text-white">{game.name}</h1>
+            <div className="mt-1 flex items-center gap-2">
               {compatRating && (
-                <span className={`text-[10px] font-bold uppercase tracking-wide ${compatRating.color}`}>{compatRating.label}</span>
+                <span className={`text-[11px] font-semibold ${compatRating.color}`}>{compatRating.label}</span>
               )}
               {runningProcess && <Badge variant="success">PID {runningProcess.pid}</Badge>}
             </div>
@@ -90,9 +89,9 @@ export function GameDetailView({ game, bottleId }: GameDetailViewProps) {
                 id: 'general',
                 label: 'General',
                 content: (
-                  <div className="space-y-4 p-1">
+                  <div className="mac-panel max-w-3xl space-y-1 p-5">
                     <SettingsRow label="Wine Version">
-                      <span className="text-[11px] text-[#a0a090]">
+                      <span className="text-[12px] text-white/50">
                         {config.bottle.wine_version}
                       </span>
                     </SettingsRow>
@@ -105,9 +104,7 @@ export function GameDetailView({ game, bottleId }: GameDetailViewProps) {
                             windows: { ...config.windows, version: e.target.value },
                           })
                         }
-                        className="bg-[#222] border-2 border-[#111] border-b-[#444] border-r-[#444] px-2 py-1
-                                   text-[11px] text-[#e0e0d0] shadow-[inset_0_2px_3px_rgba(0,0,0,0.4)]
-                                   focus:outline-none focus:border-[#7c9c2e]"
+                        className="mac-select text-[12px]"
                       >
                         {['win10', 'win11', 'win8', 'win7', 'winxp'].map((v) => (
                           <option key={v} value={v}>{v}</option>
@@ -128,10 +125,7 @@ export function GameDetailView({ game, bottleId }: GameDetailViewProps) {
                             },
                           })
                         }
-                        className="bg-[#222] border-2 border-[#111] border-b-[#444] border-r-[#444] px-2 py-1
-                                   text-[11px] text-[#e0e0d0] w-48
-                                   shadow-[inset_0_2px_3px_rgba(0,0,0,0.4)]
-                                   focus:outline-none focus:border-[#7c9c2e]"
+                        className="mac-input w-52 text-[12px]"
                       />
                     </SettingsRow>
                     <Button onClick={handleSaveConfig} disabled={saving}>
@@ -144,7 +138,7 @@ export function GameDetailView({ game, bottleId }: GameDetailViewProps) {
                 id: 'graphics',
                 label: 'Graphics',
                 content: (
-                  <div className="space-y-4 p-1">
+                  <div className="mac-panel max-w-3xl space-y-1 p-5">
                     <SettingsRow label="Graphics Backend">
                       <select
                         value={config.graphics.backend}
@@ -153,15 +147,14 @@ export function GameDetailView({ game, bottleId }: GameDetailViewProps) {
                             ...config,
                             graphics: {
                               ...config.graphics,
-                              backend: e.target.value as 'd3dmetal' | 'dxvk' | 'wine3d',
+                              backend: e.target.value as 'd3dmetal' | 'dxmt' | 'dxvk' | 'wine3d',
                             },
                           })
                         }
-                        className="bg-[#222] border-2 border-[#111] border-b-[#444] border-r-[#444] px-2 py-1
-                                   text-[11px] text-[#e0e0d0] shadow-[inset_0_2px_3px_rgba(0,0,0,0.4)]
-                                   focus:outline-none focus:border-[#7c9c2e]"
+                        className="mac-select text-[12px]"
                       >
-                        <option value="d3dmetal">D3DMetal (Best)</option>
+                        <option value="dxmt">DXMT (Open-source Metal)</option>
+                        <option value="d3dmetal">D3DMetal (User-supplied)</option>
                         <option value="dxvk">DXVK + MoltenVK</option>
                         <option value="wine3d">WineD3D (Fallback)</option>
                       </select>
@@ -174,7 +167,7 @@ export function GameDetailView({ game, bottleId }: GameDetailViewProps) {
                       ['dxgi', 'DXGI'],
                     ] as [string, string][]).map(([key, label]) => (
                       <SettingsRow key={key} label={label}>
-                        <label className="flex items-center gap-2 text-[11px] text-[#a0a090] cursor-default">
+                        <label className="flex cursor-default items-center gap-2 text-[12px] text-white/50">
                           <input
                             type="checkbox"
                             checked={
@@ -195,7 +188,7 @@ export function GameDetailView({ game, bottleId }: GameDetailViewProps) {
                                 },
                               })
                             }
-                            className="rounded"
+                            className="h-4 w-4 rounded-[2px] accent-[#0a84ff]"
                           />
                           Use native override
                         </label>
@@ -217,17 +210,17 @@ export function GameDetailView({ game, bottleId }: GameDetailViewProps) {
                 id: 'compat',
                 label: 'Compatibility',
                 content: (
-                  <div className="space-y-4 p-1">
+                  <div className="max-w-3xl space-y-4">
                     {compat ? (
                       <>
                         <Card>
                           <CardHeader>
-                            <span className={`text-sm font-medium ${compatRating?.color}`}>
+                            <span className={`text-[13px] font-semibold ${compatRating?.color}`}>
                               {compatRating?.label}
                             </span>
                           </CardHeader>
                           <CardContent>
-                            <p className="text-[11px] text-[#a0a090]">
+                            <p className="text-[12px] text-white/45">
                               Last tested: {compat.last_tested_wine ?? 'Unknown'} on{' '}
                               {compat.last_tested_date ?? 'Unknown'}
                             </p>
@@ -236,15 +229,15 @@ export function GameDetailView({ game, bottleId }: GameDetailViewProps) {
 
                         {compat.fixes.length > 0 && (
                           <div>
-                            <h3 className="text-sm font-medium text-text-primary mb-2">
+                            <h3 className="mb-2 text-[13px] font-semibold text-text-primary">
                               Known Fixes
                             </h3>
                             <div className="space-y-1">
                               {compat.fixes.map((fix, i) => (
                                 <div
                                   key={i}
-                                  className="text-[10px] text-[#808070] font-mono bg-[#2a2a2a]
-                                             rounded px-3 py-1.5 border border-border"
+                                  className="rounded-[3px] border border-[#38383c] bg-[#151517] px-3 py-2
+                                             font-mono text-[10px] text-white/45"
                                 >
                                   {fix.type}: {fix.dll ?? fix.key ?? fix.value ?? fix.verb ?? 'unknown'}
                                 </div>
@@ -255,12 +248,12 @@ export function GameDetailView({ game, bottleId }: GameDetailViewProps) {
 
                         {compat.known_issues.length > 0 && (
                           <div>
-                            <h3 className="text-sm font-medium text-text-primary mb-2">
+                            <h3 className="mb-2 text-[13px] font-semibold text-text-primary">
                               Known Issues
                             </h3>
                             <ul className="space-y-1">
                               {compat.known_issues.map((issue, i) => (
-                                <li key={i} className="text-[10px] text-[#a0a090] list-disc list-inside">
+                                <li key={i} className="list-inside list-disc text-[11px] text-white/50">
                                   {issue}
                                 </li>
                               ))}
@@ -269,7 +262,7 @@ export function GameDetailView({ game, bottleId }: GameDetailViewProps) {
                         )}
                       </>
                     ) : (
-                      <div className="text-sm text-text-muted">
+                      <div className="mac-panel p-6 text-sm text-text-muted">
                         No compatibility data available for this game.
                       </div>
                     )}
@@ -292,8 +285,8 @@ function SettingsRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between py-1.5 border-b-2 border-[#2a2a2a] last:border-0">
-      <span className="text-[11px] text-[#a0a090] font-bold uppercase tracking-wide">{label}</span>
+    <div className="flex min-h-11 items-center justify-between border-b border-[#38383c] py-2 last:border-0">
+      <span className="text-[12px] font-medium text-white/60">{label}</span>
       <div>{children}</div>
     </div>
   );

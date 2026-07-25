@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+
+      - name: Install build dependencies
+        run: brew install mingw-w64
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix ui
+
+      - name: Rebuild Steam shim
+        run: bash scripts/build-steam-shim.sh
+
+      - name: Check generated Steam shim
+        run: git diff --exit-code -- runtime/dist/steamwebhelper-shim.exe
+
+      - name: Rust format
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
+
+      - name: Rust lint
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+
+      - name: Frontend checks
+        run: |
+          npm run build --prefix ui
+          npm run lint --prefix ui
+          npm run test --prefix ui

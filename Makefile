@@ -1,4 +1,4 @@
-# GameRunner Build Orchestration
+# Budu Build Orchestration
 
 .PHONY: bootstrap dev build clean test lint release
 
@@ -13,6 +13,8 @@ bootstrap:
 	node --version
 	@echo "==> Installing frontend dependencies..."
 	cd ui && npm install
+	@echo "==> Building Steam compatibility shim..."
+	bash scripts/build-steam-shim.sh
 	@echo "==> Creating data directories..."
 	mkdir -p ~/.gamerunner/{wine,bottles,runtimes,logs,compat}
 	@echo "==> Bootstrap complete. Run 'make dev' to start."
@@ -48,7 +50,7 @@ lint:
 # ── Wine ─────────────────────────────────────────────────
 
 wine-build:
-	bash wine/build.sh
+	bash wine/build.sh 11.10
 
 # ── Packaging ────────────────────────────────────────────
 
@@ -67,7 +69,7 @@ distclean: clean
 # ── Help ─────────────────────────────────────────────────
 
 help:
-	@echo "GameRunner build targets:"
+	@echo "Budu build targets:"
 	@echo "  bootstrap    - Set up development environment"
 	@echo "  dev          - Start development server (HMR)"
 	@echo "  build        - Build for production"

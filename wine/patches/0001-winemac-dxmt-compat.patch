@@ -1,0 +1,329 @@
+From: GameRunner contributors
+Subject: [PATCH] winemac: provide the window bridge required by DXMT
+
+DXMT creates its CAMetalLayer inside Wine's Cocoa view. Upstream Wine keeps
+the required winemac.drv hooks hidden, creates its GDI client view only after
+the first presentation, and does not expose the private macdrv function table
+consumed by DXMT 0.74.
+
+Export only the five hooks DXMT uses, retain a persistent client-sized Cocoa
+view for the first swap chain, keep that view frontmost and synchronized across
+windowed, maximized, and fullscreen geometry changes, and expose a narrow
+forwarding table from ntdll. The forwarders resolve the already-loaded winemac
+module by its exact handle; no third-party Wine implementation or binary is
+used.
+
+diff --git a/dlls/ntdll/unix/virtual.c b/dlls/ntdll/unix/virtual.c
+index 0ae77bc..335fc68 100644
+--- a/dlls/ntdll/unix/virtual.c
++++ b/dlls/ntdll/unix/virtual.c
+@@ -70,6 +70,7 @@
+ # include <mach/task.h>
+ # include <mach/thread_state.h>
+ # include <mach/vm_map.h>
++# include <mach-o/dyld.h>
+ #undef host_page_size
+ #endif
+ 
+@@ -95,6 +96,104 @@ WINE_DEFAULT_DEBUG_CHANNEL(virtual);
+ WINE_DECLARE_DEBUG_CHANNEL(module);
+ WINE_DECLARE_DEBUG_CHANNEL(virtual_ranges);
+ 
++#ifdef __APPLE__
++typedef void *macdrv_opaque_handle;
++
++static void *get_winemac_handle(void)
++{
++    static void *handle;
++    uint32_t count, index;
++
++    if (handle) return handle;
++    count = _dyld_image_count();
++    for (index = 0; index < count; index++)
++    {
++        const char *path = _dyld_get_image_name(index);
++        const char *name;
++
++        if (!path) continue;
++        name = strrchr(path, '/');
++        name = name ? name + 1 : path;
++        if (strcmp(name, "winemac.so")) continue;
++        handle = dlopen(path, RTLD_LAZY | RTLD_NOLOAD);
++        if (!handle) handle = dlopen(path, RTLD_LAZY);
++        if (handle) return handle;
++    }
++    return NULL;
++}
++
++static void *get_winemac_symbol(const char *name)
++{
++    void *handle = get_winemac_handle();
++    return handle ? dlsym(handle, name) : NULL;
++}
++
++static macdrv_opaque_handle dxmt_get_win_data(macdrv_opaque_handle window)
++{
++    typedef macdrv_opaque_handle (*func_type)(macdrv_opaque_handle);
++    func_type func = (func_type)get_winemac_symbol("gamerunner_get_dxmt_win_data");
++    return func ? func(window) : NULL;
++}
++
++static void dxmt_release_win_data(macdrv_opaque_handle data)
++{
++    typedef void (*func_type)(macdrv_opaque_handle);
++    func_type func = (func_type)get_winemac_symbol("release_win_data");
++    if (func) func(data);
++}
++
++static macdrv_opaque_handle dxmt_create_metal_view(macdrv_opaque_handle view,
++                                                   macdrv_opaque_handle device)
++{
++    typedef macdrv_opaque_handle (*func_type)(macdrv_opaque_handle, macdrv_opaque_handle);
++    func_type func = (func_type)get_winemac_symbol("macdrv_view_create_metal_view");
++    return func ? func(view, device) : NULL;
++}
++
++static macdrv_opaque_handle dxmt_get_metal_layer(macdrv_opaque_handle view)
++{
++    typedef macdrv_opaque_handle (*func_type)(macdrv_opaque_handle);
++    func_type func = (func_type)get_winemac_symbol("macdrv_view_get_metal_layer");
++    return func ? func(view) : NULL;
++}
++
++static void dxmt_release_metal_view(macdrv_opaque_handle view)
++{
++    typedef void (*func_type)(macdrv_opaque_handle);
++    func_type func = (func_type)get_winemac_symbol("macdrv_view_release_metal_view");
++    if (func) func(view);
++}
++
++struct dxmt_macdrv_functions
++{
++    void *init_display_devices;
++    macdrv_opaque_handle (*get_win_data)(macdrv_opaque_handle);
++    void (*release_win_data)(macdrv_opaque_handle);
++    void *get_cocoa_window;
++    void *create_metal_device;
++    void *release_metal_device;
++    macdrv_opaque_handle (*create_metal_view)(macdrv_opaque_handle, macdrv_opaque_handle);
++    macdrv_opaque_handle (*get_metal_layer)(macdrv_opaque_handle);
++    void (*release_metal_view)(macdrv_opaque_handle);
++    void *on_main_thread;
++};
++
++__attribute__((visibility("default")))
++struct dxmt_macdrv_functions macdrv_functions =
++{
++    NULL,
++    dxmt_get_win_data,
++    dxmt_release_win_data,
++    NULL,
++    NULL,
++    NULL,
++    dxmt_create_metal_view,
++    dxmt_get_metal_layer,
++    dxmt_release_metal_view,
++    NULL,
++};
++#endif
++
+ struct preload_info
+ {
+     void  *addr;
+diff --git a/dlls/winemac.drv/macdrv.h b/dlls/winemac.drv/macdrv.h
+index 44d0c2d..9dacc0e 100644
+--- a/dlls/winemac.drv/macdrv.h
++++ b/dlls/winemac.drv/macdrv.h
+@@ -180,6 +180,7 @@ struct macdrv_win_data
+     HWND                hwnd;                   /* hwnd that this private data belongs to */
+     macdrv_window       cocoa_window;
+     macdrv_view         client_view;
++    macdrv_view         dxmt_view;              /* persistent client view for DXMT's private ABI */
+     struct window_rects rects;                  /* window rects in monitor DPI, relative to parent client area */
+     int                 pixel_format;           /* pixel format for GL */
+     HANDLE              drag_event;             /* event to signal that Cocoa-driven window dragging has ended */
+@@ -190,6 +191,7 @@ struct macdrv_win_data
+     unsigned int        per_pixel_alpha : 1;    /* is window using per-pixel alpha? */
+     unsigned int        minimized : 1;          /* is window minimized? */
+     unsigned int        fullscreen : 1;         /* is the window visible rect fullscreen? (unrelated to native AppKit/Cocoa fullscreen) */
++    unsigned int        dxmt_active : 1;         /* DXMT attached a Metal view to this window */
+ };
+ 
+ struct macdrv_client_surface
+@@ -207,8 +209,12 @@ static inline struct macdrv_client_surface *impl_from_client_surface(struct clie
+ 
+ extern struct macdrv_client_surface *macdrv_client_surface_create(HWND hwnd);
+ 
+-extern struct macdrv_win_data *get_win_data(HWND hwnd);
+-extern void release_win_data(struct macdrv_win_data *data);
++extern __attribute__((visibility("default")))
++struct macdrv_win_data *get_win_data(HWND hwnd);
++extern __attribute__((visibility("default")))
++struct macdrv_win_data *gamerunner_get_dxmt_win_data(HWND hwnd);
++extern __attribute__((visibility("default")))
++void release_win_data(struct macdrv_win_data *data);
+ extern void init_win_context(void);
+ extern macdrv_window macdrv_get_cocoa_window(HWND hwnd, BOOL require_on_screen);
+ extern RGNDATA *get_region_data(HRGN hrgn, HDC hdc_lptodp);
+diff --git a/dlls/winemac.drv/macdrv_cocoa.h b/dlls/winemac.drv/macdrv_cocoa.h
+index 3818084..4eec1bb 100644
+--- a/dlls/winemac.drv/macdrv_cocoa.h
++++ b/dlls/winemac.drv/macdrv_cocoa.h
+@@ -524,9 +524,13 @@ extern void macdrv_add_view_opengl_context(macdrv_view v, macdrv_opengl_context
+ extern void macdrv_remove_view_opengl_context(macdrv_view v, macdrv_opengl_context c);
+ extern macdrv_metal_device macdrv_create_metal_device(void);
+ extern void macdrv_release_metal_device(macdrv_metal_device d);
+-extern macdrv_metal_view macdrv_view_create_metal_view(macdrv_view v, macdrv_metal_device d);
+-extern macdrv_metal_layer macdrv_view_get_metal_layer(macdrv_metal_view v);
+-extern void macdrv_view_release_metal_view(macdrv_metal_view v);
++extern __attribute__((visibility("default")))
++macdrv_metal_view macdrv_view_create_metal_view(macdrv_view v,
++                                                macdrv_metal_device d);
++extern __attribute__((visibility("default")))
++macdrv_metal_layer macdrv_view_get_metal_layer(macdrv_metal_view v);
++extern __attribute__((visibility("default")))
++void macdrv_view_release_metal_view(macdrv_metal_view v);
+ extern bool macdrv_get_view_backing_size(macdrv_view v, int backing_size[2]);
+ extern void macdrv_set_view_backing_size(macdrv_view v, const int backing_size[2]);
+ extern uint32_t macdrv_window_background_color(void);
+diff --git a/dlls/winemac.drv/window.c b/dlls/winemac.drv/window.c
+index 1f87f9f..c2f6a01 100644
+--- a/dlls/winemac.drv/window.c
++++ b/dlls/winemac.drv/window.c
+@@ -203,6 +203,30 @@ struct macdrv_win_data *get_win_data(HWND hwnd)
+     return NULL;
+ }
+ 
++/*
++ * DXMT consumes Wine's private window-data layout and needs a stable Cocoa
++ * view before the first GDI client surface exists. Mark the window here so
++ * later GDI presents keep that Metal host view above their own surface.
++ * The returned data remains locked and is released through release_win_data.
++ */
++struct macdrv_win_data *gamerunner_get_dxmt_win_data(HWND hwnd)
++{
++    struct macdrv_win_data *data = get_win_data(hwnd);
++
++    if (data)
++    {
++        data->dxmt_active = TRUE;
++        if (data->dxmt_view)
++        {
++            macdrv_set_view_hidden(data->dxmt_view, FALSE);
++            macdrv_set_view_superview(data->dxmt_view, NULL, data->cocoa_window,
++                                      NULL, data->client_view);
++        }
++    }
++    return data;
++}
++
++
+ /***********************************************************************
+  *              release_win_data
+  *
+@@ -484,6 +508,19 @@ static void create_cocoa_window(struct macdrv_win_data *data)
+     data->cocoa_window = macdrv_create_cocoa_window(&wf, frame, data->hwnd, thread_data->queue);
+     if (!data->cocoa_window) goto done;
+ 
++    /*
++     * DXMT creates its Metal view before Wine's first GDI client surface is
++     * presented.  Keep a persistent client-sized Cocoa view available for
++     * that first swap chain instead of exposing Wine's initially-null
++     * client_view through DXMT's private macdrv ABI.
++     */
++    frame = cgrect_from_rect(data->rects.client);
++    frame.origin.x -= data->rects.visible.left;
++    frame.origin.y -= data->rects.visible.top;
++    data->dxmt_view = macdrv_create_view(frame);
++    if (data->dxmt_view)
++        macdrv_set_view_superview(data->dxmt_view, NULL, data->cocoa_window, NULL, NULL);
++
+     set_cocoa_window_properties(data);
+ 
+     /* set the window text */
+@@ -513,6 +550,11 @@ static void destroy_cocoa_window(struct macdrv_win_data *data)
+ 
+     TRACE("win %p Cocoa win %p\n", data->hwnd, data->cocoa_window);
+ 
++    if (data->dxmt_view)
++    {
++        macdrv_dispose_view(data->dxmt_view);
++        data->dxmt_view = NULL;
++    }
+     macdrv_destroy_cocoa_window(data->cocoa_window);
+     data->cocoa_window = 0;
+     data->on_screen = FALSE;
+@@ -749,6 +791,17 @@ RGNDATA *get_region_data(HRGN hrgn, HDC hdc_lptodp)
+  *
+  * Synchronize the Mac window position with the Windows one
+  */
++static void sync_dxmt_view_position(struct macdrv_win_data *data)
++{
++    CGRect frame;
++
++    if (!data->dxmt_active || !data->dxmt_view) return;
++    frame = cgrect_from_rect(data->rects.client);
++    frame.origin.x -= data->rects.visible.left;
++    frame.origin.y -= data->rects.visible.top;
++    macdrv_set_view_frame(data->dxmt_view, frame);
++}
++
+ static void sync_window_position(struct macdrv_win_data *data, UINT swp_flags, const struct window_rects *old_rects)
+ {
+     CGRect frame = cgrect_from_rect(data->rects.visible);
+@@ -1115,6 +1168,8 @@ static void macdrv_client_surface_update(struct client_surface *client)
+     if (!(data = get_win_data(toplevel))) return;
+     OffsetRect(&rect, data->rects.client.left - data->rects.visible.left, data->rects.client.top - data->rects.visible.top);
+     macdrv_set_view_frame(surface->cocoa_view, cgrect_from_rect(rect));
++    if (toplevel == hwnd && data->dxmt_active && data->dxmt_view)
++        macdrv_set_view_frame(data->dxmt_view, cgrect_from_rect(rect));
+     macdrv_set_view_superview(surface->cocoa_view, toplevel == hwnd ? NULL : data->client_view, data->cocoa_window, NULL, NULL);
+     release_win_data(data);
+ }
+@@ -1133,6 +1188,12 @@ static void macdrv_client_surface_present(struct client_surface *client, HDC hdc
+         macdrv_set_view_hidden(surface->cocoa_view, FALSE);
+         data->client_view = surface->cocoa_view;
+     }
++    if (data->dxmt_active && data->dxmt_view)
++    {
++        macdrv_set_view_hidden(data->dxmt_view, FALSE);
++        macdrv_set_view_superview(data->dxmt_view, NULL, data->cocoa_window,
++                                  NULL, data->client_view);
++    }
+     release_win_data(data);
+ }
+ 
+@@ -1598,6 +1659,7 @@ void macdrv_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UINT
+ 
+     old_rects = data->rects;
+     data->rects = *new_rects;
++    sync_dxmt_view_position(data);
+ 
+     TRACE("win %p/%p new_rects %s style %08x flags %08x surface %p\n", hwnd, data->cocoa_window,
+           debugstr_window_rects(new_rects), new_style, swp_flags, surface);
+diff --git a/loader/main.c b/loader/main.c
+index f8b113f..362c629 100644
+--- a/loader/main.c
++++ b/loader/main.c
+@@ -160,7 +160,7 @@ static void *try_dlopen( const char *argv0 )
+     else
+         path = build_path( dir, "ntdll.so" );
+ 
+-    handle = dlopen( path, RTLD_NOW );
++    handle = dlopen( path, RTLD_NOW | RTLD_GLOBAL );
+     free( p );
+     free( dir );
+     free( path );
+diff --git a/tools/wine/wine.c b/tools/wine/wine.c
+index 743b3c0..3bdd3bb 100644
+--- a/tools/wine/wine.c
++++ b/tools/wine/wine.c
+@@ -29,7 +29,7 @@ static const char *libdir;
+ 
+ static void *try_dlopen( const char *path, struct strarray *errors )
+ {
+-    void *handle = dlopen( path, RTLD_NOW );
++    void *handle = dlopen( path, RTLD_NOW | RTLD_GLOBAL );
+     if (!handle) strarray_add( errors, xstrdup( dlerror() ) );
+     return handle;
+ }

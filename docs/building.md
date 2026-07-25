@@ -1,58 +1,96 @@
-# Building GameRunner
+# Building Budu
 
 ## Prerequisites
 
-- Rust 1.77+ (https://rustup.rs)
-- Node.js 20+ (https://nodejs.org)
-- macOS 14+ with Xcode Command Line Tools
-- Apple Silicon Mac (the app builds as universal binary, but only runs on Apple Silicon)
-
-Optional for building Wine from source:
-- Homebrew packages: `brew install bison flex mingw-w64 pkg-config`
-
-## Development Build
+- Apple Silicon Mac running macOS 14 or newer
+- Xcode Command Line Tools
+- Rust 1.77 or newer
+- Node.js 20 or newer
+- Homebrew `mingw-w64` to reproduce the Windows Steam shim
 
 ```bash
-# First-time setup
+brew install mingw-w64
 make bootstrap
+```
 
-# Start with hot module reload (UI changes instant)
+## Development
+
+```bash
 make dev
 ```
 
-The `make dev` command:
-1. Starts the Vite dev server on port 5173 (HMR for React)
-2. Launches the Tauri app connecting to the dev server
-3. The Rust backend recompiles on changes
+Tauri builds the Steam shim, starts Vite, compiles the Rust backend, and opens
+Budu. The runtime itself is installed through Budu's Settings page
+and stored below `~/.gamerunner/`.
 
-## Production Build
+## Verification
+
+```bash
+make test-all
+make lint
+```
+
+The full release check is:
+
+```bash
+cd src-tauri
+cargo test --all-targets
+cargo clippy --all-targets --all-features -- -D warnings
+cd ../ui
+npm run build
+npm run lint
+npm run test
+```
+
+## Steam shim
+
+The checked-in PE binary is reproducible from its MIT-licensed C source:
+
+```bash
+bash scripts/build-steam-shim.sh
+shasum -a 256 runtime/dist/steamwebhelper-shim.exe
+```
+
+Expected SHA-256:
+
+```text
+44d85630c95d3f666fee35cb64d06c7fcf3ed493817bedd107d3e851922eb6e7
+```
+
+## Production bundle
 
 ```bash
 make build
 ```
 
-This produces:
-- `ui/dist/` -- compiled static frontend
-- `src-tauri/target/release/bundle/macos/GameRunner.app` -- signed .app bundle
+Output:
 
-## Building Wine
-
-Wine must be built as x86-64 Mach-O binaries (Rosetta 2 handles the ARM64 translation at runtime):
-
-```bash
-bash wine/build.sh 9.14
+```text
+src-tauri/target/release/bundle/macos/Budu.app
+src-tauri/target/release/bundle/dmg/Budu_0.1.0_aarch64.dmg
 ```
 
-The build script:
-1. Downloads Wine + Wine-Staging source
-2. Applies staging and macOS-specific patches
-3. Configures with Metal, CoreAudio, GStreamer support
-4. Builds and installs to `wine/build/install/`
+The bundle contains the compatibility database, Steam shim, and four small
+Wine Unix modules implementing Budu's DXMT window bridge. The rest of
+Wine and DXMT are checksum-verified downloads so the app remains reasonably
+sized.
 
-Copy the install directory to `~/.gamerunner/wine/<version>/` for the app to discover it.
+## Rebuilding Wine from source
 
-## Architecture-specific notes
+The normal app downloads the pinned Gcenx build. Maintainers can independently
+rebuild Wine 11.10 and its staging patch set with:
 
-- **x86-64 Wine on ARM64**: Wine runs as x86-64 via Rosetta 2. No ARM64 port is needed. The `wine64` binary is a Mach-O fat binary with x86-64 slice.
-- **Graphics**: D3DMetal (from Apple's GPTK) is the preferred D3D11/12 path. DXVK bridges D3D9/10/11 via Vulkan-to-Metal.
-- **esync/fsync**: macOS lacks `eventfd()`. The esync patch replaces it with Mach semaphores.
+```bash
+brew install autoconf bison flex freetype gnutls mingw-w64 pkg-config
+bash wine/build.sh 11.10
+```
+
+The script downloads checksum-pinned upstream sources into the ignored
+`wine/build/` directory, applies Wine Staging plus any patches in
+`wine/patches/`, and produces a redistributable archive with `COPYING.LIB`.
+The affected modules checked into `runtime/dist/wine-11.10` come from this
+source recipe and are overlaid onto the pinned managed Wine build at runtime.
+
+Local builds are ad-hoc signed but not notarized. For public distribution,
+release maintainers should use a Developer ID and the notarization variables
+described in `scripts/package-release.sh`.

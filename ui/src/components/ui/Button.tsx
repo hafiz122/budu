@@ -7,44 +7,38 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 const base = cn(
-  'inline-flex items-center justify-center gap-1.5 font-bold uppercase tracking-wide',
-  'border-2 cursor-default transition-none',
-  'focus-visible:outline-none disabled:opacity-60 disabled:pointer-events-none',
-  'active:translate-y-px',
+  'inline-flex items-center justify-center gap-1.5 rounded-[2px] font-semibold',
+  'border cursor-default transition-[background-color,border-color,box-shadow,transform] duration-150',
+  'focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#0a84ff]/25',
+  'disabled:opacity-45 disabled:pointer-events-none active:scale-[0.985]',
 );
 
 const variants: Record<NonNullable<ButtonProps['variant']>, string> = {
   primary: cn(
-    'bg-[linear-gradient(180deg,#8db834_0%,#6a8c1e_50%,#5a7c0e_100%)]',
-    'text-white text-shadow',
-    'border-[#4a6c0e] border-t-[#a0cc40]',
-    'shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_2px_3px_rgba(0,0,0,0.4)]',
-    'hover:bg-[linear-gradient(180deg,#9dc844_0%,#7a9c2e_50%,#6a8c1e_100%)]',
-    'active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]',
+    'border-[#3095ff] bg-[#0a84ff] text-white',
+    'shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_1px_2px_rgba(0,0,0,0.18)]',
+    'hover:border-[#58a8ff] hover:bg-[#2692ff]',
   ),
   secondary: cn(
-    'bg-[linear-gradient(180deg,#5a5a5a_0%,#444_50%,#383838_100%)]',
-    'text-[#e0e0d0] text-shadow',
-    'border-[#333] border-t-[#6a6a6a]',
-    'shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_2px_3px_rgba(0,0,0,0.3)]',
-    'hover:bg-[linear-gradient(180deg,#666_0%,#4a4a4a_50%,#3e3e3e_100%)]',
+    'border-[#45454a] bg-[#2c2c30] text-[#f5f5f7]',
+    'shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_1px_2px_rgba(0,0,0,0.12)]',
+    'hover:border-[#5a5a60] hover:bg-[#36363a]',
   ),
   ghost: cn(
-    'border-transparent bg-transparent text-[#a0a090]',
-    'hover:bg-[#444] hover:text-[#e0e0d0]',
+    'border-[#353539] bg-[#232326] text-[#a1a1a6]',
+    'hover:border-[#4a4a4f] hover:bg-[#2d2d31] hover:text-white',
   ),
   danger: cn(
-    'bg-[linear-gradient(180deg,#cc4444_0%,#aa2222_50%,#991111_100%)]',
-    'text-white text-shadow',
-    'border-[#771111] border-t-[#dd5555]',
-    'shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_2px_3px_rgba(0,0,0,0.4)]',
+    'border-[#ff6259] bg-[#d93730] text-white',
+    'shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_1px_2px_rgba(0,0,0,0.18)]',
+    'hover:bg-[#ff5e55]',
   ),
 };
 
 const sizes: Record<NonNullable<ButtonProps['size']>, string> = {
-  sm: 'px-2.5 py-1 text-[10px]',
-  md: 'px-3 py-1.5 text-[11px]',
-  lg: 'px-4 py-2 text-[12px]',
+  sm: 'h-8 px-3 text-[12px]',
+  md: 'h-9 px-3.5 text-[13px]',
+  lg: 'h-10 px-5 text-[14px]',
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(

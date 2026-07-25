@@ -1,70 +1,100 @@
-# GameRunner
+<p align="center">
+  <img src="ui/src/assets/budu-logo.svg" alt="Budu" width="560">
+</p>
 
-Run your Windows Steam games on Apple Silicon Macs.
+Budu is an open-source macOS launcher for Windows Steam games. It manages
+isolated Wine bottles, downloads Windows depots with SteamCMD, and configures an
+open Direct3D-to-Metal stack for Apple Silicon.
 
-## How It Works
+Budu does **not** require CrossOver.
 
-GameRunner wraps [Wine](https://www.winehq.org/) (Windows API translation) and graphics translation layers (D3DMetal, DXVK, MoltenVK) behind a clean macOS interface. It creates isolated "bottles" for each game, manages your Steam library, and applies the optimal configuration automatically.
+## Runtime
 
-- **Wine** translates Windows system calls to POSIX/macOS
-- **D3DMetal** (Apple's Game Porting Toolkit) translates DirectX 11/12 to Metal
-- **DXVK + MoltenVK** translates DirectX 9/10/11 to Vulkan, then Vulkan to Metal
-- **Rosetta 2** (built into macOS) translates x86-64 instructions to ARM64
+The default runtime is:
+
+- Wine Staging 11.10
+- DXMT 0.74 for Direct3D 10/11
+- Rosetta 2 for x86-64 execution on Apple Silicon
+- A small MIT-licensed SteamWebHelper shim for Steam's black-window issue
+
+Wine and DXMT are downloaded from their public releases on first install and
+verified with pinned SHA-256 checksums. Budu then applies its bundled,
+source-reproducible Wine/DXMT window bridge. CrossOver and Apple's proprietary
+D3DMetal are not bundled.
+
+The Steam shim does not bypass authentication, ownership checks, or DRM. It
+preserves Valve's original executable and only starts it with software
+compositing, working around Wine/macOS's missing cross-process presentation
+path. Steam may replace the shim during an update; Budu reapplies it on
+the next launch.
 
 ## Requirements
 
-- macOS 14 (Sonoma) or later
-- Apple Silicon Mac (M1/M2/M3/M4)
-- [Apple Game Porting Toolkit](https://developer.apple.com/download/all/) (for D3DMetal, recommended)
+- Apple Silicon Mac
+- macOS 14 or newer
+- Rosetta 2
+- A Steam account that owns the games you launch
 
-## Quick Start
+For development:
+
+- Rust 1.77+
+- Node.js 20+
+- Xcode Command Line Tools
+- `mingw-w64` when rebuilding the Steam shim
+
+## Build and run
 
 ```bash
-git clone https://github.com/user/gamerunner.git
-cd gamerunner
+git clone https://github.com/your-name/budu.git
+cd budu
 make bootstrap
 make dev
 ```
 
-## Project Structure
+Create a release app with:
 
-```
-gamerunner/
-├── src-tauri/          # Rust backend (Tauri app)
-│   └── src/
-│       ├── commands/   # Tauri command handlers (IPC boundary)
-│       ├── bottle.rs   # Wine bottle management
-│       ├── compat.rs   # Compatibility database engine
-│       ├── config.rs   # Application configuration
-│       ├── graphics.rs # Graphics backend management
-│       ├── process_supervisor.rs  # Game process lifecycle
-│       ├── runtime.rs  # VC++/DirectX/.NET runtime installers
-│       ├── steam_bridge.rs  # Steam client integration
-│       └── wine_manager.rs  # Wine version management
-├── ui/                 # Web frontend (React + TypeScript + Tailwind)
-│   └── src/
-│       ├── components/ # Reusable UI components
-│       ├── views/      # Page-level views
-│       ├── hooks/      # React hooks (Tauri invoke wrappers)
-│       ├── lib/        # Utilities, types, theme engine
-│       └── styles/     # CSS themes and global styles
-├── wine/               # Wine build scripts and macOS patches
-├── runtimes/           # Runtime dependency installers
-├── compat-db/          # Game compatibility database
-├── docs/               # Documentation
-└── scripts/            # Build and release scripts
+```bash
+make build
 ```
 
-## Customizing the UI
+The macOS bundle is written to
+`src-tauri/target/release/bundle/macos/Budu.app`.
 
-The entire UI is a standard web application (React + Tailwind CSS). You can customize every aspect without touching the Rust backend. See [docs/customizing-ui.md](docs/customizing-ui.md) for details.
+## Using Budu
 
-Quick examples:
-- **Change colors/fonts:** Edit `ui/tailwind.config.ts`
-- **Add a theme:** Create a CSS file in `ui/src/styles/themes/`
-- **Replace components:** Edit files in `ui/src/components/`
-- **Swap frameworks:** Replace the `ui/` directory with a Svelte/Vue/Solid project using the same Tauri commands
+1. Open **Settings** and select **Install Wine**.
+2. Install or import a Windows Steam game.
+3. Select the game or its `.exe`.
+4. Choose the managed bottle assigned to that game and launch it.
+
+Budu keeps SteamCMD storage shared, but each game has its own managed
+bottle configuration.
+
+Upgrades preserve the existing `~/.gamerunner` data directory and
+`gamerunner-*` preference keys so bottles created before the rename continue to
+work.
+
+## Project layout
+
+```text
+src-tauri/   Rust/Tauri backend
+ui/          React/TypeScript frontend
+runtime/     Open-source runtime helpers and reproducible shim source
+compat-db/   Bundled game compatibility entries
+wine/        Wine source-build tooling
+scripts/     Developer and release scripts
+docs/        Architecture and contributor documentation
+```
+
+## Contributing
+
+See [docs/contributing.md](docs/contributing.md) and
+[docs/building.md](docs/building.md). Compatibility fixes should be narrowly
+scoped, tested against a named Wine/Steam version, and documented so the next
+maintainer can reproduce them.
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+Budu is licensed under the [MIT License](LICENSE). Downloaded runtime
+components retain their own licenses; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

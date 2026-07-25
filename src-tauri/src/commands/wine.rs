@@ -16,8 +16,6 @@ pub async fn wine_install_version(
 }
 
 #[tauri::command]
-pub async fn wine_get_default_version(
-    state: tauri::State<'_, AppState>,
-) -> Result<String, String> {
+pub async fn wine_get_default_version(state: tauri::State<'_, AppState>) -> Result<String, String> {
     Ok(state.config.default_wine_version.clone())
 }

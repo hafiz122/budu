@@ -1,17 +1,16 @@
-# macOS release
-
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# Dependencies
-node_modules/
-
 # Build output
 src-tauri/target/
 ui/dist/
+ui/node_modules/
+runtime/dist/*
+!runtime/dist/steamwebhelper-shim.exe
+!runtime/dist/wine-11.10/
+!runtime/dist/wine-11.10/**
+
+# Wine builds (large)
+wine/9.*/
+wine/*-staging/
+wine/build/
 
 # macOS metadata
 .DS_Store
@@ -23,3 +22,10 @@ __MACOSX
 .env
 .env.local
 *.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

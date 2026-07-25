@@ -26,6 +26,14 @@ export async function createBottle(
   return invoke('bottle_create', { name, wineVersion, steamAppId });
 }
 
+export async function getOrCreateSteamBottle(
+  appId: string,
+  appName: string,
+  wineVersion: string,
+): Promise<BottleInfo> {
+  return invoke('bottle_get_or_create_for_steam_app', { appId, appName, wineVersion });
+}
+
 export async function deleteBottle(id: string): Promise<void> {
   return invoke('bottle_delete', { id });
 }
@@ -93,8 +101,8 @@ export async function launchSteamGame(appId: string, bottleId: string): Promise<
   return invoke('steam_launch_game', { appId, bottleId });
 }
 
-export async function runExe(path: string): Promise<void> {
-  return invoke('run_exe', { path });
+export async function runExe(path: string, bottleId: string): Promise<void> {
+  return invoke('run_exe', { path, bottleId });
 }
 
 export async function killWine(): Promise<void> {
@@ -109,6 +117,10 @@ export async function listWineVersions(): Promise<WineVersion[]> {
 
 export async function installWineVersion(version: string): Promise<void> {
   return invoke('wine_install_version', { version });
+}
+
+export async function getDefaultWineVersion(): Promise<string> {
+  return invoke('wine_get_default_version');
 }
 
 // ── Process commands ─────────────────────────────────────────

@@ -1,8 +1,18 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use sha2::{Digest, Sha256};
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::config::AppConfig;
+
+const GAMERUNNER_WINE_VERSION: &str = "11.10-staging";
+const GAMERUNNER_WINE_URL: &str = "https://github.com/Gcenx/macOS_Wine_builds/releases/download/11.10/wine-staging-11.10-osx64.tar.xz";
+const GAMERUNNER_WINE_SHA256: &str =
+    "940bdd1a177872020be01c5c33917cb8eecc1cc3193ad554914fb6efd90d7889";
+const DXMT_URL: &str =
+    "https://github.com/3Shain/dxmt/releases/download/v0.74/dxmt-v0.74-builtin.tar.gz";
+const DXMT_SHA256: &str = "2598981a8b725653773e277470a95dda4253b8a14d36e0dc96dce0e3800f0ceb";
 
 /// Represents an installed Wine version.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,6 +29,7 @@ pub struct WineVersion {
 
 pub struct WineManager {
     config: AppConfig,
+    resource_dir: Option<PathBuf>,
 }
 
 /// System paths to scan for wine.
@@ -31,10 +42,20 @@ const SYSTEM_PATHS: &[&str] = &[
 
 impl WineManager {
     pub fn new(config: AppConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            resource_dir: None,
+        }
     }
 
-    fn scan_dir_for_wine(&self, dir: &PathBuf) -> Option<(PathBuf, PathBuf)> {
+    pub fn with_resource_dir(config: AppConfig, resource_dir: Option<PathBuf>) -> Self {
+        Self {
+            config,
+            resource_dir,
+        }
+    }
+
+    fn scan_dir_for_wine(&self, dir: &std::path::Path) -> Option<(PathBuf, PathBuf)> {
         let wine_bin = dir.join("wine64");
         let wineserver_bin = dir.join("wineserver");
         if wine_bin.exists() && wineserver_bin.exists() {
@@ -45,20 +66,20 @@ impl WineManager {
     }
 
     /// Detect Wine version from a binary by running `wine64 --version`.
-    fn detect_version(&self, wine_bin: &PathBuf) -> String {
+    fn detect_version(&self, wine_bin: &std::path::Path) -> String {
         Command::new(wine_bin)
             .arg("--version")
             .output()
             .ok()
-            .and_then(|o| {
+            .map(|o| {
                 let stdout = String::from_utf8_lossy(&o.stdout).trim().to_string();
                 // "wine-9.14 (Staging)" -> "9.14-staging"
                 // "wine-11.0" -> "11.0"
-                Some(stdout
+                stdout
                     .strip_prefix("wine-")
                     .unwrap_or(&stdout)
                     .replace(" (Staging)", "-staging")
-                    .replace(" (staging)", "-staging"))
+                    .replace(" (staging)", "-staging")
             })
             .unwrap_or_else(|| "unknown".into())
     }
@@ -170,9 +191,100 @@ impl WineManager {
         Err(format!(
             "No Wine installation found.\n\n\
              Install via Homebrew:\n  brew install wine-stable\n\n\
-             Then restart GameRunner.\n\n\
+             Then restart Budu.\n\n\
              Or place a Wine build at:\n  ~/.gamerunner/wine/{version}/bin/wine64"
         ))
+    }
+
+    /// Resolve the configured open-source Wine runner for Steam.
+    ///
+    /// Steam's macOS CEF workaround is applied separately by `steam_compat`, so
+    /// Steam and ordinary executables use the same user-selected Wine runtime.
+    pub fn resolve_steam_wine_bin(&self, version: &str) -> Result<PathBuf, String> {
+        self.resolve_wine_bin(version)
+    }
+
+    pub fn install_dxmt_for_prefix(
+        &self,
+        wine_bin: &Path,
+        dxmt_root: &Path,
+        prefix: &Path,
+    ) -> Result<(), String> {
+        let managed_wine_dir = self
+            .config
+            .wine_dir
+            .canonicalize()
+            .map_err(|error| format!("Failed to resolve managed Wine directory: {error}"))?;
+        let wine_bin = wine_bin
+            .canonicalize()
+            .map_err(|error| format!("Failed to resolve Wine executable: {error}"))?;
+        if !wine_bin.starts_with(&managed_wine_dir) {
+            return Err(
+                "DXMT requires Budu's managed Wine runtime. Install Wine in Settings.".into(),
+            );
+        }
+        let wine_root = wine_bin
+            .parent()
+            .and_then(Path::parent)
+            .ok_or_else(|| "Managed Wine executable has an unexpected layout".to_string())?;
+        let wine_library = wine_root.join("lib/wine");
+        if !wine_library.join("x86_64-windows").is_dir()
+            || !wine_library.join("x86_64-unix").is_dir()
+        {
+            return Err(format!(
+                "Managed Wine runtime is missing its DLL directories: {}",
+                wine_library.display()
+            ));
+        }
+
+        self.install_wine_dxmt_bridge(wine_root)?;
+
+        for relative in [
+            "x86_64-unix/winemetal.so",
+            "x86_64-windows/winemetal.dll",
+            "x86_64-windows/d3d11.dll",
+            "x86_64-windows/dxgi.dll",
+            "x86_64-windows/d3d10core.dll",
+        ] {
+            install_runtime_file(&dxmt_root.join(relative), &wine_library.join(relative))?;
+        }
+
+        let prefix_system32 = prefix.join("drive_c/windows/system32");
+        std::fs::create_dir_all(&prefix_system32)
+            .map_err(|error| format!("Failed to prepare bottle system32: {error}"))?;
+        install_runtime_file(
+            &dxmt_root.join("x86_64-windows/winemetal.dll"),
+            &prefix_system32.join("winemetal.dll"),
+        )
+    }
+
+    fn install_wine_dxmt_bridge(&self, wine_root: &Path) -> Result<(), String> {
+        let development_dir =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../runtime/dist/wine-11.10");
+        let bridge_root = self
+            .resource_dir
+            .as_ref()
+            .map(|dir| dir.join("runtime/wine-11.10"))
+            .filter(|dir| dir.join("lib/wine/x86_64-unix/ntdll.so").is_file())
+            .or_else(|| {
+                development_dir
+                    .join("lib/wine/x86_64-unix/ntdll.so")
+                    .is_file()
+                    .then_some(development_dir)
+            })
+            .ok_or_else(|| {
+                "Budu's Wine/DXMT bridge is missing from the application resources".to_string()
+            })?;
+
+        for relative in [
+            "bin/wine",
+            "lib/wine/x86_64-unix/wine",
+            "lib/wine/x86_64-unix/ntdll.so",
+            "lib/wine/x86_64-unix/winemac.so",
+        ] {
+            install_runtime_file(&bridge_root.join(relative), &wine_root.join(relative))?;
+        }
+        Ok(())
     }
 
     pub fn resolve_wineserver_bin(&self, version: &str) -> Result<PathBuf, String> {
@@ -206,33 +318,227 @@ impl WineManager {
         Err("No wineserver found. Install Wine first.".into())
     }
 
-    /// Try to install Wine via Homebrew.
-    pub async fn install_version(&self, _version: &str) -> Result<(), String> {
-        // Try Homebrew first
-        if Command::new("brew").arg("--version").output().is_ok() {
-            let output = Command::new("brew")
-                .args(["install", "wine-stable"])
-                .output()
-                .map_err(|e| format!("Failed to run brew: {e}"))?;
-
-            if output.status.success() {
-                return Ok(());
-            }
-
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if stderr.contains("already installed") {
-                return Ok(());
-            }
-            return Err(format!("brew install failed:\n{stderr}"));
+    /// Install the macOS game runtime used by Budu.
+    pub async fn install_version(&self, version: &str) -> Result<(), String> {
+        if version != GAMERUNNER_WINE_VERSION {
+            return Err(format!(
+                "Unsupported Wine version '{version}'. Budu currently supports \
+                 {GAMERUNNER_WINE_VERSION}."
+            ));
         }
 
-        Err(
-            "Homebrew not found. Install it from https://brew.sh, then run:\n\
-             brew install wine-stable\n\n\
-             Or place a Wine build manually at:\n\
-             ~/.gamerunner/wine/<version>/bin/wine64"
-                .into(),
+        self.install_gamerunner_wine()?;
+        self.install_dxmt()?;
+        Ok(())
+    }
+
+    fn install_gamerunner_wine(&self) -> Result<(), String> {
+        let destination = self.config.wine_dir.join(GAMERUNNER_WINE_VERSION);
+        if destination.join("bin/wine64").is_file() && destination.join("bin/wineserver").is_file()
+        {
+            return Ok(());
+        }
+
+        std::fs::create_dir_all(&self.config.wine_dir)
+            .map_err(|error| format!("Failed to create Wine directory: {error}"))?;
+        let staging = self.config.wine_dir.join(format!(
+            ".install-{GAMERUNNER_WINE_VERSION}-{}",
+            std::process::id()
+        ));
+        if staging.exists() {
+            std::fs::remove_dir_all(&staging)
+                .map_err(|error| format!("Failed to clear incomplete Wine install: {error}"))?;
+        }
+        std::fs::create_dir_all(staging.join("runtime"))
+            .map_err(|error| format!("Failed to create Wine staging directory: {error}"))?;
+        let archive = staging.join("wine.tar.xz");
+
+        run_checked(
+            Command::new("curl")
+                .args(["-L", "--fail", "--retry", "5", "-o"])
+                .arg(&archive)
+                .arg(GAMERUNNER_WINE_URL),
+            "download Wine",
+        )?;
+        verify_sha256(&archive, GAMERUNNER_WINE_SHA256, "Wine")?;
+        run_checked(
+            Command::new("tar")
+                .arg("xJf")
+                .arg(&archive)
+                .arg("-C")
+                .arg(staging.join("runtime")),
+            "extract Wine",
+        )?;
+
+        let wine_app = std::fs::read_dir(staging.join("runtime"))
+            .map_err(|error| format!("Failed to inspect Wine archive: {error}"))?
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|path| {
+                path.file_name()
+                    .is_some_and(|name| name == "Wine Staging.app")
+            })
+            .ok_or_else(|| "Wine archive did not contain Wine Staging.app".to_string())?;
+        let runtime_bin = wine_app.join("Contents/Resources/wine/bin");
+        if !runtime_bin.join("wine").is_file() || !runtime_bin.join("wineserver").is_file() {
+            return Err("Wine archive is missing its runtime binaries".into());
+        }
+
+        std::fs::remove_file(&archive)
+            .map_err(|error| format!("Failed to remove Wine archive: {error}"))?;
+        std::fs::create_dir_all(staging.join("bin"))
+            .map_err(|error| format!("Failed to create Wine bin directory: {error}"))?;
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(runtime_bin.join("wine"), staging.join("bin/wine64"))
+                .map_err(|error| format!("Failed to link wine64: {error}"))?;
+            std::os::unix::fs::symlink(
+                runtime_bin.join("wineserver"),
+                staging.join("bin/wineserver"),
+            )
+            .map_err(|error| format!("Failed to link wineserver: {error}"))?;
+        }
+
+        std::fs::rename(&staging, &destination)
+            .map_err(|error| format!("Failed to activate Wine runtime: {error}"))
+    }
+
+    fn install_dxmt(&self) -> Result<(), String> {
+        let destination = self.config.runtimes_dir.join("dxmt-0.74");
+        let payload = destination.join("v0.74");
+        if payload.join("x86_64-windows/dxgi.dll").is_file()
+            && payload.join("x86_64-windows/d3d11.dll").is_file()
+            && payload.join("x86_64-unix").is_dir()
+        {
+            return Ok(());
+        }
+
+        std::fs::create_dir_all(&self.config.runtimes_dir)
+            .map_err(|error| format!("Failed to create runtimes directory: {error}"))?;
+        let staging = self
+            .config
+            .runtimes_dir
+            .join(format!(".install-dxmt-0.74-{}", std::process::id()));
+        if staging.exists() {
+            std::fs::remove_dir_all(&staging)
+                .map_err(|error| format!("Failed to clear incomplete DXMT install: {error}"))?;
+        }
+        std::fs::create_dir_all(&staging)
+            .map_err(|error| format!("Failed to create DXMT staging directory: {error}"))?;
+        let archive = staging.join("dxmt.tar.gz");
+
+        run_checked(
+            Command::new("curl")
+                .args(["-L", "--fail", "--retry", "5", "-o"])
+                .arg(&archive)
+                .arg(DXMT_URL),
+            "download DXMT",
+        )?;
+        verify_sha256(&archive, DXMT_SHA256, "DXMT")?;
+        run_checked(
+            Command::new("tar")
+                .arg("xzf")
+                .arg(&archive)
+                .arg("-C")
+                .arg(&staging),
+            "extract DXMT",
+        )?;
+        std::fs::remove_file(&archive)
+            .map_err(|error| format!("Failed to remove DXMT archive: {error}"))?;
+        let extracted = staging.join("v0.74");
+        if !extracted.join("x86_64-windows/dxgi.dll").is_file()
+            || !extracted.join("x86_64-windows/d3d11.dll").is_file()
+            || !extracted.join("x86_64-unix").is_dir()
+        {
+            return Err("DXMT archive is missing required runtime files".into());
+        }
+        std::fs::rename(&staging, &destination)
+            .map_err(|error| format!("Failed to activate DXMT runtime: {error}"))
+    }
+}
+
+fn install_runtime_file(source: &Path, destination: &Path) -> Result<(), String> {
+    if !source.is_file() {
+        return Err(format!("Runtime file is missing: {}", source.display()));
+    }
+    if destination.is_file()
+        && std::fs::read(source)
+            .map_err(|error| format!("Failed to read {}: {error}", source.display()))?
+            == std::fs::read(destination)
+                .map_err(|error| format!("Failed to read {}: {error}", destination.display()))?
+    {
+        return Ok(());
+    }
+    if let Some(parent) = destination.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("Failed to prepare {}: {error}", parent.display()))?;
+    }
+    if destination.is_file() {
+        let backup = destination.with_extension(format!(
+            "{}.gamerunner-original",
+            destination
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .unwrap_or("file")
+        ));
+        if !backup.exists() {
+            std::fs::copy(destination, &backup).map_err(|error| {
+                format!(
+                    "Failed to preserve original runtime file {}: {error}",
+                    destination.display()
+                )
+            })?;
+        }
+    }
+    let temporary = destination.with_extension(format!("gamerunner-tmp-{}", std::process::id()));
+    std::fs::copy(source, &temporary).map_err(|error| {
+        format!(
+            "Failed to stage DXMT file {}: {error}",
+            destination.display()
         )
+    })?;
+    std::fs::rename(&temporary, destination).map_err(|error| {
+        let _ = std::fs::remove_file(&temporary);
+        format!(
+            "Failed to activate DXMT file {}: {error}",
+            destination.display()
+        )
+    })
+}
+
+fn verify_sha256(path: &std::path::Path, expected: &str, name: &str) -> Result<(), String> {
+    let mut file = std::fs::File::open(path)
+        .map_err(|error| format!("Failed to open downloaded {name}: {error}"))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|error| format!("Failed to verify downloaded {name}: {error}"))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    let actual = format!("{:x}", hasher.finalize());
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(format!(
+            "{name} checksum mismatch: expected {expected}, got {actual}"
+        ))
+    }
+}
+
+fn run_checked(command: &mut Command, action: &str) -> Result<(), String> {
+    let output = command
+        .output()
+        .map_err(|error| format!("Failed to {action}: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let details = String::from_utf8_lossy(&output.stderr);
+        Err(format!("Failed to {action}: {}", details.trim()))
     }
 }
 
@@ -251,7 +557,7 @@ mod tests {
         let manager = WineManager::new(config);
         let versions = manager.list_versions().unwrap();
         // Might find system Wine, but at minimum shouldn't crash
-        assert!(versions.iter().all(|v| v.installed || !v.installed));
+        assert!(versions.iter().all(|_v| true));
     }
 
     #[test]
@@ -268,5 +574,132 @@ mod tests {
             Ok(_) => {} // System Wine found, that's fine
             Err(e) => assert!(e.contains("Homebrew") || e.contains("No Wine")),
         }
+    }
+
+    #[test]
+    fn steam_uses_configured_open_source_runtime() {
+        let tmp = TempDir::new().unwrap();
+        let config = AppConfig {
+            wine_dir: tmp.path().join("wine"),
+            default_wine_version: "test-wine".into(),
+            ..Default::default()
+        };
+        let wine = config.wine_dir.join("test-wine/bin/wine64");
+        std::fs::create_dir_all(wine.parent().unwrap()).unwrap();
+        std::fs::write(&wine, b"runner").unwrap();
+
+        let manager = WineManager::new(config);
+        assert_eq!(manager.resolve_steam_wine_bin("test-wine").unwrap(), wine);
+    }
+
+    #[test]
+    fn installs_builtin_dxmt_layout_and_preserves_wine_dlls() {
+        let tmp = TempDir::new().unwrap();
+        let config = AppConfig {
+            wine_dir: tmp.path().join("wine"),
+            ..Default::default()
+        };
+        let wine_root = config.wine_dir.join("managed/runtime/wine");
+        let wine_bin = wine_root.join("bin/wine");
+        let wine_library = wine_root.join("lib/wine");
+        std::fs::create_dir_all(wine_bin.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(wine_library.join("x86_64-windows")).unwrap();
+        std::fs::create_dir_all(wine_library.join("x86_64-unix")).unwrap();
+        std::fs::write(&wine_bin, b"wine").unwrap();
+        for name in ["d3d11.dll", "dxgi.dll", "d3d10core.dll"] {
+            std::fs::write(wine_library.join("x86_64-windows").join(name), b"wine").unwrap();
+        }
+
+        let dxmt = tmp.path().join("dxmt");
+        std::fs::create_dir_all(dxmt.join("x86_64-windows")).unwrap();
+        std::fs::create_dir_all(dxmt.join("x86_64-unix")).unwrap();
+        for name in ["winemetal.dll", "d3d11.dll", "dxgi.dll", "d3d10core.dll"] {
+            std::fs::write(
+                dxmt.join("x86_64-windows").join(name),
+                format!("dxmt-{name}"),
+            )
+            .unwrap();
+        }
+        std::fs::write(dxmt.join("x86_64-unix/winemetal.so"), b"dxmt-so").unwrap();
+        let prefix = tmp.path().join("bottle");
+        std::fs::create_dir_all(&prefix).unwrap();
+
+        WineManager::new(config)
+            .install_dxmt_for_prefix(&wine_bin, &dxmt, &prefix)
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read(wine_library.join("x86_64-windows/d3d11.dll")).unwrap(),
+            b"dxmt-d3d11.dll"
+        );
+        assert_eq!(
+            std::fs::read(wine_library.join("x86_64-windows/d3d11.dll.gamerunner-original"))
+                .unwrap(),
+            b"wine"
+        );
+        assert_eq!(
+            std::fs::read(prefix.join("drive_c/windows/system32/winemetal.dll")).unwrap(),
+            b"dxmt-winemetal.dll"
+        );
+    }
+
+    #[test]
+    fn installs_packaged_wine_dxmt_bridge_and_preserves_originals() {
+        let tmp = TempDir::new().unwrap();
+        let config = AppConfig {
+            wine_dir: tmp.path().join("wine"),
+            ..Default::default()
+        };
+        let wine_root = config.wine_dir.join("managed/runtime/wine");
+        for relative in [
+            "bin/wine",
+            "lib/wine/x86_64-unix/wine",
+            "lib/wine/x86_64-unix/ntdll.so",
+            "lib/wine/x86_64-unix/winemac.so",
+        ] {
+            let destination = wine_root.join(relative);
+            std::fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            std::fs::write(destination, b"upstream").unwrap();
+        }
+
+        let resources = tmp.path().join("resources");
+        let bridge = resources.join("runtime/wine-11.10");
+        for relative in [
+            "bin/wine",
+            "lib/wine/x86_64-unix/wine",
+            "lib/wine/x86_64-unix/ntdll.so",
+            "lib/wine/x86_64-unix/winemac.so",
+        ] {
+            let source = bridge.join(relative);
+            std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+            std::fs::write(source, format!("patched-{relative}")).unwrap();
+        }
+
+        WineManager::with_resource_dir(config, Some(resources))
+            .install_wine_dxmt_bridge(&wine_root)
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read(wine_root.join("lib/wine/x86_64-unix/ntdll.so")).unwrap(),
+            b"patched-lib/wine/x86_64-unix/ntdll.so"
+        );
+        assert_eq!(
+            std::fs::read(wine_root.join("lib/wine/x86_64-unix/ntdll.so.gamerunner-original"))
+                .unwrap(),
+            b"upstream"
+        );
+    }
+
+    #[test]
+    fn verifies_runtime_checksums() {
+        let tmp = TempDir::new().unwrap();
+        let archive = tmp.path().join("runtime");
+        std::fs::write(&archive, b"GameRunner").unwrap();
+        let expected = format!("{:x}", Sha256::digest(b"GameRunner"));
+
+        verify_sha256(&archive, &expected, "test runtime").unwrap();
+        assert!(verify_sha256(&archive, &"0".repeat(64), "test runtime")
+            .unwrap_err()
+            .contains("checksum mismatch"));
     }
 }

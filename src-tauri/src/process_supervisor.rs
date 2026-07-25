@@ -66,15 +66,24 @@ impl ProcessSupervisor {
     }
 
     /// Update the status of a tracked process.
-    pub fn update_status(
-        &mut self,
-        pid: u32,
-        status: ProcessStatus,
-        exit_code: Option<i32>,
-    ) {
+    pub fn update_status(&mut self, pid: u32, status: ProcessStatus, exit_code: Option<i32>) {
         if let Some(proc) = self.active.get_mut(&pid) {
             proc.status = status;
             proc.exit_code = exit_code;
+        }
+    }
+
+    pub fn get(&self, pid: u32) -> Option<&GameProcess> {
+        self.active.get(&pid)
+    }
+
+    /// Store a child exit without overwriting an explicit user-killed state.
+    pub fn complete(&mut self, pid: u32, status: ProcessStatus, exit_code: Option<i32>) {
+        if let Some(process) = self.active.get_mut(&pid) {
+            if process.status != ProcessStatus::Killed {
+                process.status = status;
+            }
+            process.exit_code = exit_code;
         }
     }
 
@@ -109,9 +118,7 @@ impl ProcessSupervisor {
             "abnormal program termination",
             "EXCEPTION_ACCESS_VIOLATION",
         ];
-        crash_patterns
-            .iter()
-            .any(|p| stderr_line.contains(p))
+        crash_patterns.iter().any(|p| stderr_line.contains(p))
     }
 
     /// Build command-line arguments to launch a game in a given bottle.
@@ -165,9 +172,31 @@ mod tests {
 
     #[test]
     fn test_crash_detection() {
-        assert!(
-            ProcessSupervisor::is_crash_message("wine: Unhandled page fault at address 0xDEAD")
-        );
-        assert!(!ProcessSupervisor::is_crash_message("Loading module kernel32.dll"));
+        assert!(ProcessSupervisor::is_crash_message(
+            "wine: Unhandled page fault at address 0xDEAD"
+        ));
+        assert!(!ProcessSupervisor::is_crash_message(
+            "Loading module kernel32.dll"
+        ));
+    }
+
+    #[test]
+    fn test_completion_preserves_killed_status() {
+        let mut supervisor = ProcessSupervisor::new();
+        supervisor.register(GameProcess {
+            pid: 42,
+            bottle_id: "test-bottle".into(),
+            steam_app_id: None,
+            command: "test.exe".into(),
+            started_at: Utc::now(),
+            status: ProcessStatus::Running,
+            exit_code: None,
+        });
+        supervisor.update_status(42, ProcessStatus::Killed, None);
+        supervisor.complete(42, ProcessStatus::Crashed, Some(15));
+
+        let process = supervisor.get(42).unwrap();
+        assert_eq!(process.status, ProcessStatus::Killed);
+        assert_eq!(process.exit_code, Some(15));
     }
 }

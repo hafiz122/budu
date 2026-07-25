@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import type { SteamApp, CompatEntry } from '@/lib/types';
 import { Badge } from './ui/Badge';
-import { Gamepad2 } from 'lucide-react';
+import { Gamepad2, Play } from 'lucide-react';
 
 interface GameCardProps {
   game: SteamApp;
@@ -13,33 +14,47 @@ interface GameCardProps {
 
 function ratingColors(rating: string): string {
   const m: Record<string, string> = {
-    platinum: 'bg-[linear-gradient(180deg,#4488aa_0%,#336688_100%)] border-[#225577] text-white',
-    gold: 'bg-[linear-gradient(180deg,#ccaa44_0%,#aa8822_100%)] border-[#886611] text-white',
-    silver: 'bg-[linear-gradient(180deg,#888_0%,#666_100%)] border-[#555] text-white',
-    bronze: 'bg-[linear-gradient(180deg,#aa7744_0%,#885522_100%)] border-[#664411] text-white',
-    borked: 'bg-[linear-gradient(180deg,#cc4444_0%,#aa2222_100%)] border-[#881111] text-white',
+    platinum: 'border-[#4faac7] bg-[#24687d] text-white',
+    gold: 'border-[#d1a900] bg-[#937900] text-white',
+    silver: 'border-[#73737a] bg-[#515157] text-white',
+    bronze: 'border-[#c97912] bg-[#8f5208] text-white',
+    borked: 'border-[#d84b43] bg-[#a62f29] text-white',
   };
-  return m[rating] ?? 'bg-[linear-gradient(180deg,#555_0%,#3a3a3a_100%)] border-[#444] text-[#999]';
+  return m[rating] ?? 'border-[#515157] bg-[#38383d] text-white';
 }
 
 export function GameCard({ game, compat, isRunning, onPlay, onSelect, className }: GameCardProps) {
+  const [artworkFailed, setArtworkFailed] = useState(false);
+  const artworkUrl = /^\d+$/.test(game.app_id)
+    ? `https://cdn.akamai.steamstatic.com/steam/apps/${game.app_id}/header.jpg`
+    : null;
+
   return (
     <div
       onClick={onSelect}
-      className={`group relative flex flex-col border-2 border-[#4a4a4a] border-t-[#5a5a5a]
-        bg-[linear-gradient(180deg,#3e3e3e_0%,#333_100%)]
-        shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_2px_3px_rgba(0,0,0,0.3)]
-        hover:bg-[linear-gradient(180deg,#484848_0%,#383838_100%)] hover:border-[#666]
-        cursor-default overflow-hidden transition-none ${className ?? ''}`}
+      className={`group relative flex cursor-default flex-col overflow-hidden rounded-[3px] border border-[#38383c]
+        bg-[#202023] shadow-[0_12px_28px_rgba(0,0,0,0.14)]
+        transition duration-200 hover:-translate-y-0.5 hover:border-[#505055]
+        hover:bg-[#27272a] hover:shadow-[0_18px_38px_rgba(0,0,0,0.24)] ${className ?? ''}`}
     >
-      <div className="relative aspect-[16/10] bg-[#2a2a2a] flex items-center justify-center
-        border-b-2 border-[#2a2a2a]">
-        <Gamepad2 size={40} className="opacity-10" />
+      <div className="relative flex aspect-[460/215] items-center justify-center overflow-hidden border-b border-[#38383c] bg-[#202024]">
+        {artworkUrl && !artworkFailed ? (
+          <img
+            src={artworkUrl}
+            alt={`${game.name} artwork`}
+            loading="lazy"
+            draggable={false}
+            onError={() => setArtworkFailed(true)}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <Gamepad2 size={42} strokeWidth={1.3} className="text-white/10" />
+        )}
 
-        <div className="absolute top-1.5 right-1.5 flex gap-1">
-          {isRunning && <Badge variant="success">ON</Badge>}
+        <div className="absolute right-2 top-2 flex gap-1">
+          {isRunning && <Badge variant="success">Running</Badge>}
           {compat && (
-            <span className={`text-[9px] px-1.5 py-0.5 border font-bold uppercase tracking-wide shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] ${ratingColors(compat.rating)}`}>
+            <span className={`rounded-[2px] border px-2 py-0.5 text-[9px] font-semibold tracking-wide ${ratingColors(compat.rating)}`}>
               {compat.rating}
             </span>
           )}
@@ -48,20 +63,20 @@ export function GameCard({ game, compat, isRunning, onPlay, onSelect, className 
         {onPlay && game.installed && (
           <button
             onClick={(e) => { e.stopPropagation(); onPlay(); }}
-            className="absolute inset-0 flex items-center justify-center
-              bg-black/70 opacity-0 group-hover:opacity-100 transition-none"
+            className="absolute inset-0 flex items-center justify-center opacity-0 transition duration-200 group-hover:opacity-100"
           >
-            <span className="px-4 py-1.5 bg-[linear-gradient(180deg,#8db834_0%,#6a8c1e_100%)] text-white text-[10px] font-bold uppercase tracking-wider
-              border-2 border-[#4a6c0e] border-t-[#a0cc40] shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_2px_3px_rgba(0,0,0,0.4)]">
+            <span className="flex items-center gap-1.5 rounded-[2px] border border-[#d1d1d6] bg-white px-4 py-2
+              text-[12px] font-semibold text-black shadow-xl">
+              <Play size={12} fill="currentColor" />
               {isRunning ? 'Stop' : 'Play'}
             </span>
           </button>
         )}
       </div>
 
-      <div className="p-2.5 flex flex-col gap-1">
-        <h3 className="text-[11px] font-bold text-[#e0e0d0] truncate text-shadow">{game.name}</h3>
-        <div className="flex items-center gap-1.5 text-[9px] text-[#909080]">
+      <div className="flex flex-col gap-2 p-3.5">
+        <h3 className="truncate text-[13px] font-semibold text-white/90">{game.name}</h3>
+        <div className="flex items-center gap-2 text-[10px] text-white/35">
           {game.installed ? <Badge variant="success">Installed</Badge> : <Badge>Not installed</Badge>}
           {game.size_bytes != null && <span>{fmt(game.size_bytes)}</span>}
         </div>

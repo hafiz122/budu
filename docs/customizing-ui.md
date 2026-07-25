@@ -1,6 +1,6 @@
 # Customizing the UI
 
-The entire GameRunner UI is a standard web application (React + TypeScript + Tailwind CSS). You can change every pixel without touching the Rust backend.
+The entire Budu UI is a standard web application (React + TypeScript + Tailwind CSS). You can change every pixel without touching the Rust backend.
 
 ## Quick Wins
 

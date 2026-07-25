@@ -27,15 +27,14 @@ export function ConsoleView({ lines, className }: ConsoleViewProps) {
       ref={ref}
       onScroll={handleScroll}
       className={cn(
-        'h-full min-h-[200px] overflow-auto font-mono text-[11px] leading-relaxed',
-        'border-2 border-[#1a1a1a]',
-        'shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)]',
-        'bg-[#0a0a0a] p-3',
+        'h-full min-h-[200px] overflow-auto rounded-[3px] font-mono text-[11px] leading-relaxed',
+        'border border-[#38383c] bg-[#0d0d0f] p-4',
+        'shadow-[inset_0_1px_8px_rgba(0,0,0,0.3)]',
         className,
       )}
     >
       {lines.length === 0 ? (
-        <div className="text-[#336633] italic">Ready. Launch a game to see output here.</div>
+        <div className="italic text-white/30">Ready. Launch a game to see output here.</div>
       ) : (
         lines.map((line, i) => (
           <div
@@ -43,10 +42,10 @@ export function ConsoleView({ lines, className }: ConsoleViewProps) {
             className={cn(
               'whitespace-pre-wrap break-all',
               line.startsWith('ERROR') || line.includes('error')
-                ? 'text-[#ff4444]'
+                ? 'text-[#ff6961]'
                 : line.startsWith('err:') || line.includes('warn')
-                  ? 'text-[#ccaa44]'
-                  : 'text-[#33cc33]',
+                  ? 'text-[#ffc15c]'
+                  : 'text-[#7ce997]',
             )}
           >
             {line}

@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::config::{AppConfig, GraphicsBackend};
 
@@ -73,7 +73,7 @@ pub struct GraphicsSection {
 impl Default for GraphicsSection {
     fn default() -> Self {
         Self {
-            backend: GraphicsBackend::D3DMetal,
+            backend: GraphicsBackend::DXMT,
             dxgi_override_native: true,
             d3d10_override_native: true,
             d3d11_override_native: true,
@@ -137,41 +137,14 @@ impl BottleManager {
 
         for entry in entries.flatten() {
             let prefix_path = entry.path();
-            if !prefix_path.is_dir() {
+            if !prefix_path.is_dir() || !prefix_path.join("bottle.toml").is_file() {
                 continue;
             }
-
-            let id = prefix_path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default();
-
-            let config_path = prefix_path.join("bottle.toml");
-            let bottle_config = if config_path.exists() {
-                self.read_config(&config_path).unwrap_or_default()
-            } else {
-                BottleConfig::default()
-            };
-
-            let drive_c = prefix_path.join("drive_c");
-            let status = if drive_c.exists() {
-                BottleStatus::Idle
-            } else {
-                BottleStatus::Configuring
-            };
-
-            bottles.push(BottleInfo {
-                steam_app_id: bottle_config.steam.app_id.clone(),
-                wine_version: bottle_config.bottle.wine_version.clone(),
-                name: bottle_config.bottle.name.clone(),
-                created_at: chrono::Utc::now(), // would read from fs metadata in prod
-                id,
-                prefix_path,
-                config_path,
-                status,
-            });
+            let id = entry.file_name().to_string_lossy().to_string();
+            bottles.push(self.bottle_info_from_path(self.resolve_bottle_path(&id)?)?);
         }
 
+        bottles.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(bottles)
     }
 
@@ -183,7 +156,59 @@ impl BottleManager {
         steam_app_id: Option<&str>,
     ) -> Result<BottleInfo, String> {
         let id = uuid::Uuid::new_v4().to_string();
+        self.create_bottle_with_id(&id, name, wine_version, steam_app_id)
+    }
+
+    /// Return the managed bottle for a Steam app, creating it when necessary.
+    pub fn get_or_create_for_steam_app(
+        &self,
+        app_id: &str,
+        app_name: &str,
+        wine_version: &str,
+    ) -> Result<BottleInfo, String> {
+        if app_id.is_empty() || !app_id.chars().all(|c| c.is_ascii_digit()) {
+            return Err("Steam App ID must contain only digits".into());
+        }
+        validate_identifier(wine_version, "Wine version")?;
+
+        if let Some(existing) = self
+            .list_bottles()?
+            .into_iter()
+            .find(|bottle| bottle.steam_app_id.as_deref() == Some(app_id))
+        {
+            return Ok(existing);
+        }
+
+        let id = format!("steam-{app_id}");
         let prefix_path = self.config.bottles_dir.join(&id);
+        if prefix_path.exists() {
+            let existing = self.bottle_info_from_path(prefix_path)?;
+            if existing.steam_app_id.as_deref() == Some(app_id) {
+                return Ok(existing);
+            }
+            return Err(format!(
+                "Bottle '{id}' already exists but is not assigned to Steam App {app_id}"
+            ));
+        }
+
+        let name = if app_name.trim().is_empty() {
+            format!("Steam App {app_id}")
+        } else {
+            app_name.trim().to_string()
+        };
+        self.create_bottle_with_id(&id, &name, wine_version, Some(app_id))
+    }
+
+    fn create_bottle_with_id(
+        &self,
+        id: &str,
+        name: &str,
+        wine_version: &str,
+        steam_app_id: Option<&str>,
+    ) -> Result<BottleInfo, String> {
+        validate_identifier(id, "Bottle ID")?;
+        validate_identifier(wine_version, "Wine version")?;
+        let prefix_path = self.config.bottles_dir.join(id);
         std::fs::create_dir_all(&prefix_path)
             .map_err(|e| format!("Failed to create bottle dir: {e}"))?;
 
@@ -207,8 +232,7 @@ impl BottleManager {
         // In production we would run: WINEPREFIX=path wine64 wineboot -u
         // For now, create the expected directory structure.
         let drive_c = prefix_path.join("drive_c").join("windows");
-        std::fs::create_dir_all(&drive_c)
-            .map_err(|e| format!("Failed to create drive_c: {e}"))?;
+        std::fs::create_dir_all(&drive_c).map_err(|e| format!("Failed to create drive_c: {e}"))?;
 
         Ok(BottleInfo {
             steam_app_id: steam_app_id.map(String::from),
@@ -216,7 +240,7 @@ impl BottleManager {
             name: name.to_string(),
             created_at: chrono::Utc::now(),
             status: BottleStatus::Idle,
-            id,
+            id: id.to_string(),
             prefix_path,
             config_path,
         })
@@ -224,47 +248,106 @@ impl BottleManager {
 
     /// Delete a bottle and all its data.
     pub fn delete_bottle(&self, bottle_id: &str) -> Result<(), String> {
-        // Prevent path traversal attacks
-        if bottle_id.contains("..") || bottle_id.contains('/') || bottle_id.contains('\\') {
-            return Err("Invalid bottle ID".into());
-        }
-        let prefix_path = self.config.bottles_dir.join(bottle_id);
-        // Resolve and verify we're still inside bottles_dir
-        let canonical = prefix_path.canonicalize().unwrap_or(prefix_path.clone());
-        let canonical_base = self.config.bottles_dir.canonicalize().unwrap_or_else(|_| self.config.bottles_dir.clone());
-        if !canonical.starts_with(&canonical_base) {
-            return Err("Bottle path escapes base directory".into());
-        }
-        if !prefix_path.exists() {
-            return Err(format!("Bottle '{bottle_id}' not found"));
-        }
-        std::fs::remove_dir_all(&prefix_path)
-            .map_err(|e| format!("Failed to delete bottle: {e}"))
+        let prefix_path = self.resolve_bottle_path(bottle_id)?;
+        std::fs::remove_dir_all(&prefix_path).map_err(|e| format!("Failed to delete bottle: {e}"))
     }
 
     /// Read configuration from a bottle's `bottle.toml`.
     pub fn get_config(&self, bottle_id: &str) -> Result<BottleConfig, String> {
-        let config_path = self.config.bottles_dir.join(bottle_id).join("bottle.toml");
+        let config_path = self.resolve_bottle_path(bottle_id)?.join("bottle.toml");
         self.read_config(&config_path)
     }
 
     /// Write configuration to a bottle's `bottle.toml`.
     pub fn save_config(&self, bottle_id: &str, config: &BottleConfig) -> Result<(), String> {
-        let config_path = self.config.bottles_dir.join(bottle_id).join("bottle.toml");
+        let config_path = self.resolve_bottle_path(bottle_id)?.join("bottle.toml");
         self.write_config(&config_path, config)
     }
 
-    fn read_config(&self, path: &PathBuf) -> Result<BottleConfig, String> {
+    /// Resolve a managed bottle directory without allowing path traversal or symlink escapes.
+    pub fn resolve_bottle_path(&self, bottle_id: &str) -> Result<PathBuf, String> {
+        resolve_existing_child(&self.config.bottles_dir, bottle_id, "Bottle")
+    }
+
+    fn bottle_info_from_path(&self, prefix_path: PathBuf) -> Result<BottleInfo, String> {
+        let id = prefix_path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .ok_or_else(|| "Bottle path has no filename".to_string())?;
+        validate_identifier(&id, "Bottle ID")?;
+
+        let config_path = prefix_path.join("bottle.toml");
+        let bottle_config = if config_path.exists() {
+            self.read_config(&config_path)?
+        } else {
+            BottleConfig::default()
+        };
+        let created_at = prefix_path
+            .metadata()
+            .and_then(|metadata| metadata.created().or_else(|_| metadata.modified()))
+            .map(DateTime::<Utc>::from)
+            .unwrap_or_else(|_| Utc::now());
+        let status = if prefix_path.join("drive_c").exists() {
+            BottleStatus::Idle
+        } else {
+            BottleStatus::Configuring
+        };
+
+        Ok(BottleInfo {
+            steam_app_id: bottle_config.steam.app_id,
+            wine_version: bottle_config.bottle.wine_version,
+            name: bottle_config.bottle.name,
+            created_at,
+            id,
+            prefix_path,
+            config_path,
+            status,
+        })
+    }
+
+    fn read_config(&self, path: &Path) -> Result<BottleConfig, String> {
         let contents =
             std::fs::read_to_string(path).map_err(|e| format!("Failed to read config: {e}"))?;
         toml::from_str(&contents).map_err(|e| format!("Failed to parse config: {e}"))
     }
 
-    fn write_config(&self, path: &PathBuf, config: &BottleConfig) -> Result<(), String> {
+    fn write_config(&self, path: &Path, config: &BottleConfig) -> Result<(), String> {
         let contents =
             toml::to_string_pretty(config).map_err(|e| format!("Failed to serialize: {e}"))?;
         std::fs::write(path, contents).map_err(|e| format!("Failed to write config: {e}"))
     }
+}
+
+pub fn validate_identifier(value: &str, label: &str) -> Result<(), String> {
+    if value.is_empty()
+        || !value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    {
+        return Err(format!(
+            "{label} may contain only letters, numbers, '.', '-' and '_'"
+        ));
+    }
+    Ok(())
+}
+
+pub fn resolve_existing_child(base: &Path, id: &str, label: &str) -> Result<PathBuf, String> {
+    validate_identifier(id, &format!("{label} ID"))?;
+    let canonical_base = base
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve {} directory: {e}", label.to_lowercase()))?;
+    let candidate = base.join(id);
+    let canonical_candidate = candidate
+        .canonicalize()
+        .map_err(|_| format!("{label} '{id}' not found"))?;
+
+    if canonical_candidate == canonical_base || !canonical_candidate.starts_with(&canonical_base) {
+        return Err(format!("{label} path escapes its base directory"));
+    }
+    if !canonical_candidate.is_dir() {
+        return Err(format!("{label} '{id}' is not a directory"));
+    }
+    Ok(canonical_candidate)
 }
 
 #[cfg(test)]
@@ -284,8 +367,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let manager = BottleManager::new(test_config(&tmp));
 
-        let bottle = tokio_test::block_on(manager.create_bottle("Test Game", "9.14-staging", None))
-            .unwrap();
+        let bottle =
+            tokio_test::block_on(manager.create_bottle("Test Game", "9.14-staging", None)).unwrap();
         assert_eq!(bottle.name, "Test Game");
         assert!(bottle.prefix_path.exists());
 
@@ -298,8 +381,9 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let manager = BottleManager::new(test_config(&tmp));
 
-        let bottle = tokio_test::block_on(manager.create_bottle("Config Test", "9.0-staging", None))
-            .unwrap();
+        let bottle =
+            tokio_test::block_on(manager.create_bottle("Config Test", "9.0-staging", None))
+                .unwrap();
 
         let mut config = manager.get_config(&bottle.id).unwrap();
         config.graphics.backend = GraphicsBackend::DXVK;
@@ -307,5 +391,49 @@ mod tests {
 
         let reloaded = manager.get_config(&bottle.id).unwrap();
         assert_eq!(reloaded.graphics.backend.to_string(), "dxvk");
+    }
+
+    #[test]
+    fn test_rejects_invalid_bottle_ids_for_all_operations() {
+        let tmp = TempDir::new().unwrap();
+        let manager = BottleManager::new(test_config(&tmp));
+        for invalid in ["", "..", "../outside", "nested/id", r"nested\id"] {
+            assert!(manager.resolve_bottle_path(invalid).is_err());
+            assert!(manager.get_config(invalid).is_err());
+            assert!(manager
+                .save_config(invalid, &BottleConfig::default())
+                .is_err());
+            assert!(manager.delete_bottle(invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn test_get_or_create_for_steam_app_reuses_bottle() {
+        let tmp = TempDir::new().unwrap();
+        let manager = BottleManager::new(test_config(&tmp));
+        let first = manager
+            .get_or_create_for_steam_app("730", "Counter-Strike 2", "9.14-staging")
+            .unwrap();
+        let second = manager
+            .get_or_create_for_steam_app("730", "Renamed Game", "9.14-staging")
+            .unwrap();
+
+        assert_eq!(first.id, "steam-730");
+        assert_eq!(first.id, second.id);
+        assert_eq!(manager.list_bottles().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn list_bottles_ignores_unmanaged_prefix_directories() {
+        let tmp = TempDir::new().unwrap();
+        let manager = BottleManager::new(test_config(&tmp));
+        std::fs::create_dir_all(tmp.path().join("steam/drive_c")).unwrap();
+
+        let managed =
+            tokio_test::block_on(manager.create_bottle("Managed", "9.14-staging", None)).unwrap();
+        let bottles = manager.list_bottles().unwrap();
+
+        assert_eq!(bottles.len(), 1);
+        assert_eq!(bottles[0].id, managed.id);
     }
 }

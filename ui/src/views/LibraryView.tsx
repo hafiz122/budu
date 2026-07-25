@@ -1,21 +1,40 @@
 import { useState, useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
-import type { SteamApp, CompatEntry } from '@/lib/types';
+import type { BottleInfo, SteamApp, CompatEntry } from '@/lib/types';
 import { GameGrid } from '@/components/GameGrid';
+import { ManualBottleDialog } from '@/components/ManualBottleDialog';
 import { Button } from '@/components/ui/Button';
 import { useSteamGames } from '@/hooks/useSteamGames';
 import { useCompat } from '@/hooks/useCompat';
-import { launchSteamGame, installSteamCmd, downloadGame, openSteamCmdTerminal, runExe, killWine } from '@/lib/tauri';
+import { useGameProcess } from '@/hooks/useGameProcess';
+import {
+  downloadGame,
+  getDefaultWineVersion,
+  getOrCreateSteamBottle,
+  installSteamCmd,
+  killWine,
+  launchSteamGame,
+  openSteamCmdTerminal,
+  runExe,
+} from '@/lib/tauri';
 
 interface LibraryViewProps {
   onSelectGame: (game: SteamApp) => void;
+  bottles: BottleInfo[];
+  onCreateBottle: (name: string, wineVersion: string) => Promise<BottleInfo>;
+  onBottlesChanged: () => Promise<void>;
 }
 
-export function LibraryView({ onSelectGame }: LibraryViewProps) {
+export function LibraryView({
+  onSelectGame,
+  bottles,
+  onCreateBottle,
+  onBottlesChanged,
+}: LibraryViewProps) {
   const { games, status, loading, refresh } = useSteamGames();
   const { results, search } = useCompat();
-  const [runningGames] = useState<Set<string>>(new Set());
+  const { processes } = useGameProcess();
   const [searchQuery, setSearchQuery] = useState('');
   const [appIdInput, setAppIdInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -24,6 +43,9 @@ export function LibraryView({ onSelectGame }: LibraryViewProps) {
   const logRef = useRef<HTMLDivElement>(null);
   const [steamUser, setSteamUser] = useState('');
   const [steamPass, setSteamPass] = useState('');
+  const [pendingExe, setPendingExe] = useState<string | null>(null);
+  const [selectedBottleId, setSelectedBottleId] = useState('');
+  const [newBottleName, setNewBottleName] = useState('');
 
   useEffect(() => {
     const unlisten = listen<string>('steam:install-progress', (event) => {
@@ -40,12 +62,22 @@ export function LibraryView({ onSelectGame }: LibraryViewProps) {
 
   const compatMap: Record<string, CompatEntry> = {};
   for (const e of results) compatMap[e.app_id] = e;
+  const runningGames = new Set(
+    processes
+      .filter((process) => process.status === 'running' && process.steam_app_id)
+      .map((process) => process.steam_app_id as string),
+  );
 
   const handlePlay = async (appId: string) => {
     if (!appId) return;
     setMessage(null);
     try {
-      const result = await launchSteamGame(appId, 'steam');
+      const game = games.find((candidate) => candidate.app_id === appId);
+      if (!game) throw new Error(`Steam App ${appId} is not in the library`);
+      const wineVersion = await getDefaultWineVersion();
+      const bottle = await getOrCreateSteamBottle(appId, game.name, wineVersion);
+      await onBottlesChanged();
+      const result = await launchSteamGame(appId, bottle.id);
       setMessage({ text: result, ok: true });
     } catch (err) {
       setMessage({ text: String(err), ok: false });
@@ -84,11 +116,38 @@ export function LibraryView({ onSelectGame }: LibraryViewProps) {
     });
     if (!selected) return;
     setMessage(null);
+    setPendingExe(selected as string);
+    setSelectedBottleId(bottles[0]?.id ?? '');
+    setNewBottleName('');
+  };
+
+  const handleCreateManualBottle = async () => {
+    const name = newBottleName.trim();
+    if (!name) return;
+    setBusy(true);
     try {
-      await runExe(selected as string);
-      setMessage({ text: 'Launched.', ok: true });
+      const wineVersion = await getDefaultWineVersion();
+      const bottle = await onCreateBottle(name, wineVersion);
+      setSelectedBottleId(bottle.id);
+      setNewBottleName('');
     } catch (err) {
       setMessage({ text: String(err), ok: false });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleLaunchManualExe = async () => {
+    if (!pendingExe || !selectedBottleId) return;
+    setBusy(true);
+    try {
+      await runExe(pendingExe, selectedBottleId);
+      setMessage({ text: 'Launched.', ok: true });
+      setPendingExe(null);
+    } catch (err) {
+      setMessage({ text: String(err), ok: false });
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -114,30 +173,36 @@ export function LibraryView({ onSelectGame }: LibraryViewProps) {
     ? games.filter((g) => g.name.toLowerCase().includes(searchQuery.toLowerCase()))
     : games;
 
-  const inputClass = cn(
-    'px-2 py-1 text-[11px]',
-    'bg-[#222] border-2',
-    'border-[#111] border-b-[#444] border-r-[#444]',
-    'text-[#e0e0d0] placeholder:text-[#555]',
-    'shadow-[inset_0_2px_3px_rgba(0,0,0,0.4)]',
-    'focus:outline-none focus:border-[#7c9c2e]',
-  );
+  const inputClass = 'mac-input text-[12px]';
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col">
+      {pendingExe && (
+        <ManualBottleDialog
+          executablePath={pendingExe}
+          bottles={bottles}
+          selectedBottleId={selectedBottleId}
+          newBottleName={newBottleName}
+          busy={busy}
+          onSelect={setSelectedBottleId}
+          onNameChange={setNewBottleName}
+          onCreate={handleCreateManualBottle}
+          onLaunch={handleLaunchManualExe}
+          onCancel={() => setPendingExe(null)}
+        />
+      )}
       {/* Header */}
-      <div className="flex items-center justify-between mb-4 drag-region">
+      <div className="drag-region mb-5 flex items-end justify-between gap-6">
         <div>
-          <h1 className="text-[13px] font-bold uppercase tracking-wider text-[#e0e0d0] text-shadow">Library</h1>
-          <p className="text-[10px] text-[#808070] mt-0.5">
-            {games.length} game{games.length !== 1 ? 's' : ''} installed
+          <h1 className="text-[26px] font-bold tracking-[-0.035em] text-white">Library</h1>
+          <p className="mt-1 text-[12px] text-white/40">
+            {games.length} installed game{games.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <div className="flex items-center gap-2 no-drag">
+        <div className="no-drag flex flex-wrap items-center justify-end gap-2">
           <input type="text" placeholder="Search games..." value={searchQuery}
             onChange={(e) => { setSearchQuery(e.target.value); if (e.target.value) search(e.target.value); }}
-            className={cn(inputClass, 'w-44')} />
-          <Button variant="danger" size="sm" onClick={async () => { await killWine(); addLog('> Killed all Wine processes.'); }}>Kill All</Button>
+            className={cn(inputClass, 'w-48')} />
           <Button variant="secondary" size="sm" onClick={handleRunExe}>Run .exe</Button>
           {!steamcmdInstalled ? (
             <Button onClick={handleSetupSteamCmd} disabled={busy}>
@@ -149,26 +214,32 @@ export function LibraryView({ onSelectGame }: LibraryViewProps) {
               <Button variant="secondary" size="sm" onClick={refresh}>Refresh</Button>
             </>
           )}
+          <Button variant="danger" size="sm" onClick={async () => { await killWine(); addLog('> Killed all Wine processes.'); }}>Stop All</Button>
         </div>
       </div>
 
       {/* SteamCMD download bar */}
       {steamcmdInstalled && (
-        <div className="mb-3 p-3 bg-[linear-gradient(180deg,#3e3e3e_0%,#333_100%)] border-2 border-[#4a4a4a] border-t-[#5a5a5a] shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_2px_3px_rgba(0,0,0,0.3)] space-y-2">
-          <div className="flex gap-2">
-            <input type="text" placeholder="Username" value={steamUser}
-              onChange={(e) => setSteamUser(e.target.value)} className={cn(inputClass, 'w-40')} />
-            <input type="password" placeholder="Password" value={steamPass}
-              onChange={(e) => setSteamPass(e.target.value)} className={cn(inputClass, 'w-36')} />
+        <div className="mac-panel mb-4 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <h2 className="text-[13px] font-semibold text-white/90">Download from Steam</h2>
+              <p className="mt-0.5 text-[11px] text-white/35">Credentials are optional for anonymous downloads.</p>
+            </div>
+            <div className="flex gap-2">
+              <input type="text" placeholder="Username" value={steamUser}
+                onChange={(e) => setSteamUser(e.target.value)} className={cn(inputClass, 'w-36')} />
+              <input type="password" placeholder="Password" value={steamPass}
+                onChange={(e) => setSteamPass(e.target.value)} className={cn(inputClass, 'w-36')} />
+            </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[11px] text-[#a0a090] font-bold uppercase tracking-wide">App ID:</span>
-            <input type="text" placeholder="e.g. 739630" value={appIdInput}
+            <input type="text" placeholder="Steam App ID, e.g. 739630" value={appIdInput}
               onChange={(e) => setAppIdInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleDownload()}
               className={cn(inputClass, 'flex-1')} />
             <Button onClick={handleDownload} disabled={busy || !appIdInput.trim()}>
-              {busy ? '...' : 'Download'}
+              {busy ? 'Downloading…' : 'Download'}
             </Button>
           </div>
         </div>
@@ -176,24 +247,23 @@ export function LibraryView({ onSelectGame }: LibraryViewProps) {
 
       {/* Message */}
       {message && (
-        <div className={`mb-3 px-3 py-2 text-[11px] font-bold border-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ${
+        <div className={`mac-notice mb-4 ${
           message.ok
-            ? 'bg-[#2a3a1a] border-[#5a8f3c] text-[#8cc85c]'
-            : 'bg-[#3a1a1a] border-[#aa3333] text-[#ff6666]'
+            ? 'mac-notice-success'
+            : 'mac-notice-danger'
         }`}>
           {message.text}
-          <button className="ml-2 underline opacity-70 hover:opacity-100" onClick={() => setMessage(null)}>Dismiss</button>
+          <button className="ml-2 font-semibold opacity-70 hover:opacity-100" onClick={() => setMessage(null)}>Dismiss</button>
         </div>
       )}
 
       {/* Console log */}
       {log.length > 0 && (
         <div ref={logRef}
-          className="mb-3 max-h-36 overflow-auto font-mono text-[10px] leading-relaxed
-                     bg-[#0a0a0a] border-2 border-[#1a1a1a] p-2.5
-                     shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)]">
+          className="mb-4 max-h-36 overflow-auto rounded-[3px] border border-[#38383c] bg-[#0d0d0f] p-3
+                     font-mono text-[10px] leading-relaxed shadow-inner">
           {log.map((line, i) => (
-            <div key={i} className={`whitespace-pre-wrap break-all ${line.startsWith('!') ? 'text-[#ff4444]' : line.startsWith('>') ? 'text-[#88cc44]' : 'text-[#33cc33]'}`}>
+            <div key={i} className={`whitespace-pre-wrap break-all ${line.startsWith('!') ? 'text-[#ff6961]' : line.startsWith('>') ? 'text-[#7ce997]' : 'text-[#69b4ff]'}`}>
               {line}
             </div>
           ))}
@@ -201,13 +271,13 @@ export function LibraryView({ onSelectGame }: LibraryViewProps) {
       )}
 
       {/* Game grid */}
-      <div className="flex-1 overflow-auto -mx-1 px-1">
+      <div className="-mx-1 flex-1 overflow-auto px-1 pb-3">
         {loading ? (
-          <div className="flex items-center justify-center h-48 text-[#707060] text-[11px]">Loading...</div>
+          <div className="flex h-48 items-center justify-center text-[12px] text-white/35">Loading…</div>
         ) : filteredGames.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-48 text-[#707060] gap-2">
-            <p className="text-[11px] font-bold uppercase tracking-wider">No games found</p>
-            <p className="text-[10px]">
+          <div className="mac-panel flex h-52 flex-col items-center justify-center gap-2 text-white/35">
+            <p className="text-[14px] font-semibold text-white/65">No games found</p>
+            <p className="text-[12px]">
               {!steamcmdInstalled ? 'Click Setup SteamCMD to get started.' : 'Enter an App ID above and click Download.'}
             </p>
           </div>

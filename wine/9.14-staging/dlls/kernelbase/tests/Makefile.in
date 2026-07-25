@@ -1,8 +1,0 @@
-TESTDLL   = kernelbase.dll
-
-SOURCES = \
-	file.c \
-	path.c \
-	process.c \
-	rsrc.rc \
-	sync.c

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Bootstrap the development environment for GameRunner.
+# Bootstrap the development environment for Budu.
 #
 # Usage: bash scripts/dev-bootstrap.sh
 
@@ -7,7 +7,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-echo "==> GameRunner Dev Bootstrap"
+echo "==> Budu Dev Bootstrap"
 
 # ── Check prerequisites ──────────────────────────────────
 
@@ -58,4 +58,4 @@ echo "    Run 'make dev' to start the development server."
 echo ""
 echo "    To run Windows games, you need a Wine build."
 echo "    Place it at: ~/.gamerunner/wine/<version>/"
-echo "    Or download one from the GameRunner releases page."
+echo "    Or download one from the Budu releases page."

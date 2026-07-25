@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://gamerunner.app/compat-entry.schema.json",
-  "title": "GameRunner Compatibility Entry",
+  "$id": "https://budu.app/compat-entry.schema.json",
+  "title": "Budu Compatibility Entry",
   "type": "object",
   "required": ["app_id", "name", "rating"],
   "properties": {

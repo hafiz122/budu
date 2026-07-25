@@ -1,46 +1,69 @@
-# macOS Wine Patches
+# Wine and Steam compatibility maintenance
 
-Wine's Linux focus means several features need patching to work well on macOS. This document tracks the patches maintained in `wine/patches/`.
+Budu uses Wine Staging 11.10 with one small, source-available macOS patch,
+plus a separate SteamWebHelper launcher. Keeping both workarounds narrow makes
+them auditable and independently replaceable.
 
-## Active Patches
+## DXMT window integration
 
-### 0001-esync-mach-sem.patch
+Wine's macOS driver hides the private Cocoa-window hooks that DXMT needs to put
+a Metal layer inside a game window. DXMT 0.74 also consumes a private structure
+layout used by FOSS CrossOver Wine, which differs from upstream Wine 11.10.
 
-**Problem:** Wine's `esync` (eventfd-based synchronization) uses Linux's `eventfd()` system call, which does not exist on macOS. Without esync, many games experience severe performance degradation due to slow synchronization primitives.
+`wine/patches/0001-winemac-dxmt-compat.patch`:
 
-**Solution:** Replace `eventfd()` calls with Mach semaphores or Grand Central Dispatch semaphores (`dispatch_semaphore_t`). The patch modifies `dlls/ntdll/unix/esync.c` to:
+1. Exports only the five window/view functions used by DXMT.
+2. Gives each top-level window a persistent, client-sized Cocoa view before
+   the first GDI presentation, which is when DXMT creates its first swap chain.
+3. Exposes DXMT's narrow macdrv function table from `ntdll` and forwards each
+   call through the exact, already-loaded `winemac.so` handle.
+4. Leaves the graphics implementation in DXMT; it does not import CrossOver
+   code or binaries.
 
-- Use `dispatch_semaphore_create()` instead of `eventfd()`
-- Use `dispatch_semaphore_signal()` instead of `write()` to the eventfd
-- Use `dispatch_semaphore_wait()` instead of `read()` from the eventfd
+The four affected Unix runtime modules are bundled under
+`runtime/dist/wine-11.10` so Budu can patch a newly downloaded managed
+Wine runtime before installing DXMT. Originals are retained beside each file
+with a `.gamerunner-original` suffix. The same binaries can be reproduced from
+WineHQ and Wine Staging sources with `wine/build.sh`.
 
-**Status:** Required for acceptable game performance. Must be updated for each Wine release.
+## Steam CEF black window
 
-**Test:** Games that use many synchronization primitives (most D3D11/D3D12 titles) should show stable frame pacing.
+Modern Steam renders its interface through Chromium processes. On macOS,
+mainline Wine lacks the cross-process presentation path needed to display the
+GPU process' surface in the browser window.
 
-### 0002-metal-window-interop.patch
+Budu's workaround:
 
-**Problem:** Wine's Mac driver (`winemac.drv`) handles window creation and GDI rendering, but does not coordinate with Metal-based rendering from D3DMetal. This can cause the D3DMetal output to appear in the wrong window or not at all when multiple Wine windows exist.
+1. Preserve Valve's current helper as
+   `steamwebhelper.gamerunner-original.exe`.
+2. Put Budu's open-source shim at Steam's expected helper path.
+3. Start Steam with `-noverifyfiles`, preventing the startup verifier from
+   immediately replacing the shim.
+4. Have the shim launch the original helper with
+   `--no-sandbox --in-process-gpu --disable-gpu`.
+5. Detect a helper replaced by a Steam update, refresh the backup, and reapply
+   the shim on the next Budu launch.
 
-**Solution:** Patch `winemac.drv` to expose a `CALayer`/`CAMetalLayer` handle that D3DMetal can render into. Coordinate window resize and focus events between the two rendering paths.
+Source: `runtime/steamwebhelper-shim/steamwebhelper.c`
 
-**Status:** Needed for D3DMetal integration. May be upstreamed to Wine's Mac driver.
+This is a rendering workaround only. Do not add account bypasses, Steam API
+emulators, cracked DLLs, or DRM workarounds.
 
-### Future Patches
+## Updating Steam compatibility
 
-- **Wine server QoS tuning:** Map Windows thread priorities to macOS QoS classes (`QOS_CLASS_USER_INTERACTIVE`, `QOS_CLASS_USER_INITIATED`, etc.)
-- **GPU detection:** Report Apple Silicon GPU capabilities correctly to games that query adapter features
-- **HID device passthrough:** Better gamepad support via IOKit HID
+When Steam changes:
 
-## Patch Development
+1. Restore or allow Steam to install its updated helper.
+2. Launch once through Budu.
+3. Confirm the backup hash matches Valve's new helper.
+4. Confirm the active helper contains the legacy `GameRunner` marker. The
+   marker remains stable so existing shim binaries can be detected after the
+   Budu rename.
+5. Inspect the actual child command line and verify the three compositor
+   arguments are present.
+6. Test both the sign-in/profile window and a real game launch.
 
-Each patch targets a specific Wine version. When updating Wine:
-
-1. Apply patches incrementally (0001, then 0002, etc.)
-2. Fix conflicts manually
-3. Rebuild and run the integration test suite
-4. Update this document with any changes
-
-## Upstreaming Goal
-
-The long-term goal is to upstream as many patches as possible to Wine proper. Patches that are macOS-specific and non-controversial (esync replacement) are the best candidates. Patches that change Wine's internal APIs (Metal window interop) may need to stay downstream.
+If Valve removes support for the compositor arguments, the long-term fallback
+is an LGPL DXMT/winemac IOSurface cross-process presentation implementation.
+That should be developed as a separate, reviewable patch series and offered
+upstream.

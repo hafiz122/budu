@@ -1,4 +1,4 @@
-# Contributing to GameRunner
+# Contributing to Budu
 
 ## How to Help
 
@@ -20,8 +20,8 @@
 ### Development Setup
 
 ```bash
-git clone https://github.com/user/gamerunner.git
-cd gamerunner
+git clone https://github.com/your-name/budu.git
+cd budu
 make bootstrap
 make dev
 ```
@@ -62,8 +62,10 @@ cargo test                 # Rust unit tests
 cd ui && npm run test      # Frontend tests
 ```
 
-Integration tests require a real Wine installation and Steam client. These run in CI but can also be run locally with Wine installed.
+End-to-end launch tests require a real Wine installation and Steam client and
+are intentionally separate from the hermetic unit suite.
 
 ## Architecture
 
-See `/docs/architecture.md` and the plan at `.claude/plans/` for the full design.
+See the source modules under `src-tauri/src/` and
+[`wine-patches.md`](wine-patches.md) for the runtime design.

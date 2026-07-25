@@ -28,11 +28,10 @@ impl GraphicsManager {
 
         vec![
             GraphicsBackendInfo {
-                installed: self.check_d3dmetal(&runtimes),
-                description:
-                    "DirectX 11/12 → Metal. Best performance on Apple Silicon. \
+                installed: self.check_d3dmetal(runtimes),
+                description: "DirectX 11/12 → Metal. Best performance on Apple Silicon. \
                      Part of Apple's Game Porting Toolkit."
-                        .into(),
+                    .into(),
                 name: "D3DMetal (Apple GPTK)".into(),
                 backend: GraphicsBackend::D3DMetal,
                 dll_paths: vec![
@@ -42,11 +41,27 @@ impl GraphicsManager {
                 ],
             },
             GraphicsBackendInfo {
-                installed: self.check_dxvk(&runtimes) && self.check_moltenvk(&runtimes),
-                description:
-                    "DirectX 9/10/11 → Vulkan → Metal. Fully open source, \
+                installed: self.dxmt_path().is_some(),
+                description: "DirectX 10/11 → Metal. Open-source, fast on Apple Silicon, \
+                     and compatible with current macOS Wine builds."
+                    .into(),
+                name: "DXMT (Metal)".into(),
+                backend: GraphicsBackend::DXMT,
+                dll_paths: self
+                    .dxmt_path()
+                    .map(|path| {
+                        vec![
+                            path.join("x86_64-windows").join("dxgi.dll"),
+                            path.join("x86_64-windows").join("d3d11.dll"),
+                        ]
+                    })
+                    .unwrap_or_default(),
+            },
+            GraphicsBackendInfo {
+                installed: self.check_dxvk(runtimes) && self.check_moltenvk(runtimes),
+                description: "DirectX 9/10/11 → Vulkan → Metal. Fully open source, \
                      good D3D9/10/11 compatibility."
-                        .into(),
+                    .into(),
                 name: "DXVK + MoltenVK".into(),
                 backend: GraphicsBackend::DXVK,
                 dll_paths: vec![
@@ -58,10 +73,9 @@ impl GraphicsManager {
             },
             GraphicsBackendInfo {
                 installed: true, // WineD3D is built into Wine.
-                description:
-                    "Wine's built-in DirectX → OpenGL translation. \
+                description: "Wine's built-in DirectX → OpenGL translation. \
                      Always available but slow on macOS (OpenGL 4.1 limit)."
-                        .into(),
+                    .into(),
                 name: "WineD3D (built-in)".into(),
                 backend: GraphicsBackend::WineD3D,
                 dll_paths: vec![],
@@ -78,6 +92,8 @@ impl GraphicsManager {
                 if backends[0].installed {
                     GraphicsBackend::D3DMetal
                 } else if backends[1].installed {
+                    GraphicsBackend::DXMT
+                } else if backends[2].installed {
                     GraphicsBackend::DXVK
                 } else {
                     GraphicsBackend::WineD3D
@@ -87,13 +103,15 @@ impl GraphicsManager {
                 if backends[0].installed {
                     GraphicsBackend::D3DMetal
                 } else if backends[1].installed {
+                    GraphicsBackend::DXMT
+                } else if backends[2].installed {
                     GraphicsBackend::DXVK
                 } else {
                     GraphicsBackend::WineD3D
                 }
             }
             9 => {
-                if backends[1].installed {
+                if backends[2].installed {
                     GraphicsBackend::DXVK
                 } else {
                     GraphicsBackend::WineD3D
@@ -130,6 +148,7 @@ impl GraphicsManager {
                     parts.push("d3d9=n,b");
                 }
             }
+            GraphicsBackend::DXMT => {}
             GraphicsBackend::WineD3D => {
                 // Use Wine's built-in DLLs.
                 parts.push("dxgi=b;d3d11=b;d3d10=b;d3d9=b");
@@ -143,20 +162,31 @@ impl GraphicsManager {
         }
     }
 
-    fn check_d3dmetal(&self, runtimes: &PathBuf) -> bool {
+    fn check_d3dmetal(&self, runtimes: &std::path::Path) -> bool {
         runtimes.join("d3dmetal").join("libdxgi.dylib").exists()
             && runtimes.join("d3dmetal").join("libd3d12.dylib").exists()
     }
 
-    fn check_dxvk(&self, runtimes: &PathBuf) -> bool {
+    fn check_dxvk(&self, runtimes: &std::path::Path) -> bool {
         runtimes.join("dxvk").join("x64").join("dxgi.dll").exists()
     }
 
-    fn check_moltenvk(&self, runtimes: &PathBuf) -> bool {
-        runtimes
-            .join("moltenvk")
-            .join("libMoltenVK.dylib")
-            .exists()
+    fn check_moltenvk(&self, runtimes: &std::path::Path) -> bool {
+        runtimes.join("moltenvk").join("libMoltenVK.dylib").exists()
+    }
+
+    pub fn dxmt_path(&self) -> Option<PathBuf> {
+        let runtimes = &self.config.runtimes_dir;
+        let candidates = [
+            runtimes.join("dxmt"),
+            runtimes.join("dxmt-0.74").join("v0.74"),
+            runtimes.join("dxmt-0.74"),
+        ];
+        candidates.into_iter().find(|path| {
+            path.join("x86_64-windows").join("dxgi.dll").is_file()
+                && path.join("x86_64-windows").join("d3d11.dll").is_file()
+                && path.join("x86_64-unix").is_dir()
+        })
     }
 }
 
@@ -191,14 +221,18 @@ mod tests {
         let config = AppConfig::default();
         let mgr = GraphicsManager::new(config);
         let backends = mgr.detect_backends();
-        assert_eq!(backends.len(), 3);
+        assert_eq!(backends.len(), 4);
         // WineD3D is always installed.
-        assert!(backends[2].installed);
+        assert!(backends[3].installed);
     }
 
     #[test]
     fn test_best_backend_fallback() {
-        let config = AppConfig::default();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let config = AppConfig {
+            runtimes_dir: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
         let mgr = GraphicsManager::new(config);
         // Without D3DMetal or DXVK installed, should fall back to WineD3D.
         assert_eq!(mgr.best_backend_for_d3d(12), GraphicsBackend::WineD3D);
@@ -206,13 +240,29 @@ mod tests {
     }
 
     #[test]
+    fn test_dxmt_detection_and_selection() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let dxmt = tmp.path().join("dxmt-0.74/v0.74");
+        std::fs::create_dir_all(dxmt.join("x86_64-windows")).unwrap();
+        std::fs::create_dir_all(dxmt.join("x86_64-unix")).unwrap();
+        std::fs::write(dxmt.join("x86_64-windows/dxgi.dll"), b"test").unwrap();
+        std::fs::write(dxmt.join("x86_64-windows/d3d11.dll"), b"test").unwrap();
+        let config = AppConfig {
+            runtimes_dir: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+        let mgr = GraphicsManager::new(config);
+
+        assert_eq!(mgr.best_backend_for_d3d(11), GraphicsBackend::DXMT);
+        assert_eq!(mgr.dxmt_path(), Some(dxmt));
+    }
+
+    #[test]
     fn test_dll_overrides() {
         let config = AppConfig::default();
         let mgr = GraphicsManager::new(config);
-        let overrides = mgr.build_dll_overrides(
-            GraphicsBackend::D3DMetal,
-            &DllOverrideConfig::default(),
-        );
+        let overrides =
+            mgr.build_dll_overrides(GraphicsBackend::D3DMetal, &DllOverrideConfig::default());
         assert!(overrides.contains("dxgi=n,b"));
         assert!(overrides.contains("d3d12=n,b"));
         // d3d9 should not be in overrides by default.

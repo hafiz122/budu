@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::config::AppConfig;
+use crate::{bottle::resolve_existing_child, config::AppConfig};
 
 /// Known runtime dependency that can be installed into a Wine bottle.
 #[derive(Debug, Clone)]
@@ -96,25 +96,10 @@ impl RuntimeManager {
     }
 
     /// Symlink cached runtime DLLs into a bottle's system32 directory.
-    pub fn install_to_bottle(
-        &self,
-        bottle_id: &str,
-        runtime_id: &str,
-    ) -> Result<(), String> {
-        let runtime_path = self
-            .config
-            .runtimes_dir
-            .join(runtime_id);
-        if !runtime_path.exists() {
-            return Err(format!(
-                "Runtime '{runtime_id}' is not cached. Download it first."
-            ));
-        }
-
-        let system32 = self
-            .config
-            .bottles_dir
-            .join(bottle_id)
+    pub fn install_to_bottle(&self, bottle_id: &str, runtime_id: &str) -> Result<(), String> {
+        let runtime_path =
+            resolve_existing_child(&self.config.runtimes_dir, runtime_id, "Runtime")?;
+        let system32 = resolve_existing_child(&self.config.bottles_dir, bottle_id, "Bottle")?
             .join("drive_c")
             .join("windows")
             .join("system32");
@@ -143,8 +128,7 @@ impl RuntimeManager {
                 .map_err(|e| format!("Failed to symlink DLL: {e}"))?;
 
             #[cfg(not(target_os = "macos"))]
-            std::fs::copy(&src, &dst)
-                .map_err(|e| format!("Failed to copy DLL: {e}"))?;
+            std::fs::copy(&src, &dst).map_err(|e| format!("Failed to copy DLL: {e}"))?;
         }
 
         Ok(())
@@ -154,6 +138,7 @@ impl RuntimeManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn test_list_runtimes() {
@@ -161,5 +146,21 @@ mod tests {
         let mgr = RuntimeManager::new(config);
         let runtimes = mgr.list_runtimes();
         assert_eq!(runtimes.len(), 4);
+    }
+
+    #[test]
+    fn test_install_rejects_path_traversal() {
+        let tmp = TempDir::new().unwrap();
+        let config = AppConfig {
+            bottles_dir: tmp.path().join("bottles"),
+            runtimes_dir: tmp.path().join("runtimes"),
+            ..Default::default()
+        };
+        std::fs::create_dir_all(&config.bottles_dir).unwrap();
+        std::fs::create_dir_all(&config.runtimes_dir).unwrap();
+        let mgr = RuntimeManager::new(config);
+
+        assert!(mgr.install_to_bottle("../outside", "vcrun2022").is_err());
+        assert!(mgr.install_to_bottle("valid", "../outside").is_err());
     }
 }

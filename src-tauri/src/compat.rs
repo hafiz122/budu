@@ -112,7 +112,7 @@ impl CompatEngine {
             .flatten()
         {
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "json") {
+            if path.extension().is_some_and(|e| e == "json") {
                 if let Ok(contents) = std::fs::read_to_string(&path) {
                     if let Ok(compat_entry) = serde_json::from_str::<CompatEntry>(&contents) {
                         self.entries.push(compat_entry);

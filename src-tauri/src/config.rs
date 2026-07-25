@@ -4,7 +4,7 @@ use std::path::PathBuf;
 /// Application-wide configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
-    /// Base directory for all GameRunner data.
+    /// Base directory for all Budu data.
     pub data_dir: PathBuf,
     /// Directory where Wine versions are staged.
     pub wine_dir: PathBuf,
@@ -26,6 +26,7 @@ pub struct AppConfig {
 #[serde(rename_all = "lowercase")]
 pub enum GraphicsBackend {
     D3DMetal,
+    DXMT,
     DXVK,
     WineD3D,
 }
@@ -34,6 +35,7 @@ impl std::fmt::Display for GraphicsBackend {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::D3DMetal => write!(f, "d3dmetal"),
+            Self::DXMT => write!(f, "dxmt"),
             Self::DXVK => write!(f, "dxvk"),
             Self::WineD3D => write!(f, "wine3d"),
         }
@@ -54,8 +56,8 @@ impl Default for AppConfig {
             logs_dir: data_dir.join("logs"),
             compat_db_path: data_dir.join("compat").join("db.json"),
             data_dir,
-            default_wine_version: "9.14-staging".into(),
-            default_graphics_backend: GraphicsBackend::D3DMetal,
+            default_wine_version: "11.10-staging".into(),
+            default_graphics_backend: GraphicsBackend::DXMT,
         }
     }
 }

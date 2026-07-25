@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capabilities for GameRunner",
+  "description": "Default capabilities for Budu",
   "windows": ["main"],
   "permissions": [
     "core:default",

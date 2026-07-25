@@ -8,10 +8,9 @@ export function Card({ className, hover, children, ...props }: CardProps) {
   return (
     <div
       className={cn(
-        'bg-[linear-gradient(180deg,#3e3e3e_0%,#333_100%)]',
-        'border-2 border-[#555] border-t-[#5a5a5a]',
-        'shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_2px_3px_rgba(0,0,0,0.3)]',
-        hover && 'hover:bg-[linear-gradient(180deg,#484848_0%,#383838_100%)] hover:border-[#666] cursor-default',
+        'overflow-hidden rounded-[3px] border border-[#38383c] bg-[#202023]',
+        'shadow-[0_12px_34px_rgba(0,0,0,0.14)]',
+        hover && 'cursor-default transition duration-200 hover:-translate-y-0.5 hover:border-[#505055] hover:bg-[#27272a] hover:shadow-[0_16px_40px_rgba(0,0,0,0.22)]',
         className,
       )}
       {...props}
@@ -25,9 +24,8 @@ export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDiv
   return (
     <div
       className={cn(
-        'px-4 py-2.5 border-b-2 border-[#2a2a2a]',
-        'bg-[linear-gradient(180deg,#383838_0%,#2d2d2d_100%)]',
-        'font-bold text-[11px] uppercase tracking-wider text-[#c0c0b0] text-shadow',
+        'border-b border-[#38383c] bg-[#262629] px-5 py-3.5',
+        'text-[12px] font-semibold text-[#f5f5f7]',
         className,
       )}
       {...props}
@@ -36,5 +34,5 @@ export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDiv
 }
 
 export function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('px-4 py-3', className)} {...props} />;
+  return <div className={cn('px-5 py-4', className)} {...props} />;
 }

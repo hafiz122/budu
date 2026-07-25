@@ -18,17 +18,24 @@ pub async fn bottle_create(
 }
 
 #[tauri::command]
-pub async fn bottle_delete(
-    id: String,
+pub async fn bottle_get_or_create_for_steam_app(
+    app_id: String,
+    app_name: String,
+    wine_version: String,
     state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
+) -> Result<BottleInfo, String> {
+    state
+        .bottle_manager
+        .get_or_create_for_steam_app(&app_id, &app_name, &wine_version)
+}
+
+#[tauri::command]
+pub async fn bottle_delete(id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
     state.bottle_manager.delete_bottle(&id)
 }
 
 #[tauri::command]
-pub async fn bottle_list(
-    state: tauri::State<'_, AppState>,
-) -> Result<Vec<BottleInfo>, String> {
+pub async fn bottle_list(state: tauri::State<'_, AppState>) -> Result<Vec<BottleInfo>, String> {
     state.bottle_manager.list_bottles()
 }
 
@@ -75,6 +82,7 @@ pub async fn graphics_build_dll_overrides(
 ) -> Result<String, String> {
     let backend = match backend.as_str() {
         "d3dmetal" => GraphicsBackend::D3DMetal,
+        "dxmt" => GraphicsBackend::DXMT,
         "dxvk" => GraphicsBackend::DXVK,
         "wine3d" => GraphicsBackend::WineD3D,
         _ => return Err(format!("Unknown backend: {backend}")),
