@@ -217,28 +217,35 @@ fn build_steam_launch_spec(
         .or_insert_with(|| "0".into());
     apply_graphics_environment(backend, &mut environment, dll_overrides);
 
-    let mut steam_args = vec![
-        format!(
-            r"C:\Program Files (x86)\Steam\{}",
-            steam_executable
-                .file_name()
-                .and_then(|name| name.to_str())
-                .ok_or_else(|| "Steam executable has an invalid filename".to_string())?
-        ),
-        "-noverifyfiles".into(),
-        "-applaunch".into(),
-        app_id.to_string(),
-    ];
-    if let Some(options) = config
+    let steam_path = format!(
+        r"C:\Program Files (x86)\Steam\{}",
+        steam_executable
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| "Steam executable has an invalid filename".to_string())?
+    );
+    let launch_options = config
         .steam
         .launch_options
-        .filter(|value| !value.trim().is_empty())
-    {
-        steam_args.extend(
+        .filter(|value| !value.trim().is_empty());
+    let steam_args = if let Some(options) = launch_options {
+        let mut args = vec![
+            steam_path,
+            "-noverifyfiles".into(),
+            "-applaunch".into(),
+            app_id.to_string(),
+        ];
+        args.extend(
             shell_words::split(&options)
                 .map_err(|error| format!("Invalid launch options in bottle config: {error}"))?,
         );
-    }
+        args
+    } else {
+        // `-applaunch` selects the first configured Steam launch option. For
+        // games such as Phasmophobia that option is VR. The desktop-shortcut
+        // protocol selects the publisher's default launch option instead.
+        vec![steam_path, format!("steam://rungameid/{app_id}")]
+    };
     let args = if let Some(desktop) = config
         .windows
         .virtual_desktop
@@ -894,9 +901,64 @@ mod tests {
             spec.args,
             [
                 String::from(r"C:\Program Files (x86)\Steam\steam.exe"),
+                String::from("steam://rungameid/648800")
+            ]
+        );
+    }
+
+    #[test]
+    fn steam_launch_spec_honors_saved_launch_options() {
+        let tmp = TempDir::new().unwrap();
+        let config = AppConfig {
+            data_dir: tmp.path().to_path_buf(),
+            wine_dir: tmp.path().join("wine"),
+            bottles_dir: tmp.path().join("bottles"),
+            runtimes_dir: tmp.path().join("runtimes"),
+            logs_dir: tmp.path().join("logs"),
+            compat_db_path: tmp.path().join("compat/db.json"),
+            default_wine_version: "test-wine".into(),
+            default_graphics_backend: GraphicsBackend::D3DMetal,
+        };
+        config.ensure_dirs().unwrap();
+        let wine_bin = config.wine_dir.join("test-wine/bin/wine64");
+        std::fs::create_dir_all(wine_bin.parent().unwrap()).unwrap();
+        std::fs::write(&wine_bin, b"test").unwrap();
+        std::fs::write(config.wine_dir.join("test-wine/bin/wineserver"), b"test").unwrap();
+        let steam_executable = tmp
+            .path()
+            .join("shared-steam/drive_c/Program Files (x86)/Steam/steam.exe");
+        std::fs::create_dir_all(steam_executable.parent().unwrap()).unwrap();
+        std::fs::write(&steam_executable, b"steam").unwrap();
+
+        let bottle_manager = BottleManager::new(config.clone());
+        let bottle =
+            tokio_test::block_on(bottle_manager.create_bottle("Test", "test-wine", Some("730")))
+                .unwrap();
+        let mut bottle_config = bottle_manager.get_config(&bottle.id).unwrap();
+        bottle_config.steam.launch_options = Some(r#"-novid "two words""#.into());
+        bottle_manager
+            .save_config(&bottle.id, &bottle_config)
+            .unwrap();
+
+        let spec = build_steam_launch_spec(
+            &WineManager::new(config.clone()),
+            &bottle_manager,
+            &GraphicsManager::new(config),
+            &bottle.id,
+            &steam_executable,
+            "730",
+        )
+        .unwrap();
+
+        assert_eq!(
+            spec.args,
+            [
+                String::from(r"C:\Program Files (x86)\Steam\steam.exe"),
                 String::from("-noverifyfiles"),
                 String::from("-applaunch"),
-                String::from("648800")
+                String::from("730"),
+                String::from("-novid"),
+                String::from("two words")
             ]
         );
     }
