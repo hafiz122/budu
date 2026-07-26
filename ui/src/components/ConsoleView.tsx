@@ -30,6 +30,7 @@ export function ConsoleView({ lines, className }: ConsoleViewProps) {
         'h-full min-h-[200px] overflow-auto rounded-[3px] font-mono text-[11px] leading-relaxed',
         'border border-[#38383c] bg-[#0d0d0f] p-4',
         'shadow-[inset_0_1px_8px_rgba(0,0,0,0.3)]',
+        'selectable-diagnostic',
         className,
       )}
     >
