@@ -2,113 +2,144 @@
   <img src="ui/src/assets/budu-logo.svg" alt="Budu" width="560">
 </p>
 
-[![Build status](https://github.com/hafiz122/budu/actions/workflows/ci.yml/badge.svg)](https://github.com/hafiz122/budu/actions/workflows/ci.yml)
+<p align="center">
+  A native macOS launcher for playing your Windows Steam games on Apple Silicon.
+</p>
 
-Budu is an open-source macOS launcher for Windows Steam games. It manages
-isolated Wine bottles, downloads Windows depots with SteamCMD, and configures an
-open Direct3D-to-Metal stack for Apple Silicon.
+<p align="center">
+  <a href="https://github.com/hafiz122/budu/actions/workflows/ci.yml"><img src="https://github.com/hafiz122/budu/actions/workflows/ci.yml/badge.svg" alt="Build status"></a>
+</p>
 
-Budu does **not** require CrossOver.
+## What is Budu?
 
-## Runtime
+Budu helps you install and launch Windows-only Steam games on an Apple Silicon
+Mac. It takes care of the less glamorous parts, including downloading Windows
+game files through SteamCMD, setting up a Wine bottle for each game, and
+configuring the graphics stack used to run it.
 
-The default runtime is:
+The goal is simple: get from your Steam library to a game that launches without
+turning every setup step into a terminal project. Budu is open source and does
+not require CrossOver.
+
+## What you need
+
+- An Apple Silicon Mac running macOS 14 or later
+- Rosetta 2
+- A Steam account that owns the game you want to play
+
+Game compatibility will vary. A game may depend on unsupported anti-cheat,
+launchers, codecs, or graphics features, so it is worth checking a game before
+expecting it to work perfectly.
+
+## Getting started
+
+1. Download Budu from the project's [GitHub Releases page](https://github.com/hafiz122/budu/releases).
+2. Open Budu and go to **Settings**.
+3. Select **Install Wine** and let Budu prepare the runtime.
+4. Install or import a Windows Steam game.
+5. Select the game, or choose its `.exe`, then launch it with its managed
+   bottle.
+
+SteamCMD downloads are kept in shared storage, while every game gets its own
+managed bottle and configuration. This keeps game-specific settings from
+spilling into the rest of your library.
+
+## Under the hood
+
+The default runtime combines these open components:
 
 - Wine Staging 11.10
-- DXMT 0.74 for Direct3D 10/11
+- DXMT 0.74 for Direct3D 10 and 11 translation
 - Rosetta 2 for x86-64 execution on Apple Silicon
-- A small GPL-3.0-only SteamWebHelper shim for Steam's black-window issue
+- A small GPL-3.0-only SteamWebHelper shim that addresses Steam's black-window
+  issue under Wine on macOS
 
-Wine and DXMT are downloaded from their public releases on first install and
-verified with pinned SHA-256 checksums. Budu then applies its bundled,
-source-reproducible Wine/DXMT window bridge. CrossOver and Apple's proprietary
-D3DMetal are not bundled.
+Wine and DXMT are downloaded from their public releases when needed, and Budu
+checks them against pinned SHA-256 hashes. The app also applies its bundled,
+source-reproducible Wine and DXMT window bridge. CrossOver and Apple's
+proprietary D3DMetal are not included.
 
-The Steam shim does not bypass authentication, ownership checks, or DRM. It
-preserves Valve's original executable and only starts it with software
-compositing, working around Wine/macOS's missing cross-process presentation
-path. Steam may replace the shim during an update; Budu reapplies it on
-the next launch.
+The SteamWebHelper shim does not bypass Steam sign-in, ownership checks, or
+DRM. It preserves Valve's executable and starts it with software compositing
+to work around a missing Wine/macOS presentation path. Steam updates can
+replace the shim, and Budu reinstalls it on the next launch.
 
-## Requirements
+## Building from source
 
-- Apple Silicon Mac
-- macOS 14 or newer
-- Rosetta 2
-- A Steam account that owns the games you launch
+For local development, install the following first:
 
-For development:
-
-- Rust 1.77+
-- Node.js 20+
+- Rust 1.77 or newer
+- Node.js 20 or newer
 - Xcode Command Line Tools
-- `mingw-w64` when rebuilding the Steam shim
-
-## Build and run
+- Homebrew `mingw-w64` if you need to rebuild the Steam shim
 
 ```bash
 git clone https://github.com/hafiz122/budu.git
 cd budu
+brew install mingw-w64
 make bootstrap
 make dev
 ```
 
-Create a release app with:
+Useful commands:
 
 ```bash
-make build
+make test-all  # Run Rust and UI tests
+make lint      # Run Rust and UI linters
+make build     # Create a production app bundle
 ```
 
-The macOS bundle is written to
-`src-tauri/target/release/bundle/macos/Budu.app`.
+The built application is available at:
 
-## Releases and security
+```text
+src-tauri/target/release/bundle/macos/Budu.app
+```
 
-Pre-release builds are experimental and currently unsigned. Download them only
-from Budu's official GitHub Releases page, and back up game saves before
-testing. Budu is not affiliated with Valve or Steam.
+For a deeper look at local builds, runtime packaging, and rebuilding Wine, see
+[docs/building.md](docs/building.md).
 
-Before publishing a stable release, I will sign the app with a Developer ID
-certificate, notarize it with Apple, and staple the notarization ticket to the
-distributed app and DMG.
+## Data and upgrades
 
-Security reports should use GitHub's private vulnerability reporting feature.
+Budu stores its data in `~/.gamerunner/`. Updates preserve that directory and
+the existing `gamerunner-*` preferences, so bottles made before the project
+rename continue to work.
 
-## Using Budu
+Back up your game saves before trying a pre-release, especially if a game keeps
+saves inside its Wine bottle.
 
-1. Open **Settings** and select **Install Wine**.
-2. Install or import a Windows Steam game.
-3. Select the game or its `.exe`.
-4. Choose the managed bottle assigned to that game and launch it.
+## Security and releases
 
-Budu keeps SteamCMD storage shared, but each game has its own managed
-bottle configuration.
+Pre-release builds are experimental and currently unsigned. Only download them
+from the official [GitHub Releases page](https://github.com/hafiz122/budu/releases).
+Budu is not affiliated with Valve or Steam.
 
-Upgrades preserve the existing `~/.gamerunner` data directory and
-`gamerunner-*` preference keys so bottles created before the rename continue to
-work.
+Stable releases are planned to be signed with a Developer ID certificate,
+notarized by Apple, and distributed with the notarization ticket attached.
+
+To report a security issue privately, use GitHub's vulnerability reporting
+feature. See [SECURITY.md](SECURITY.md) for the reporting policy.
 
 ## Project layout
 
 ```text
-src-tauri/   Rust/Tauri backend
-ui/          React/TypeScript frontend
-runtime/     Open-source runtime helpers and reproducible shim source
+src-tauri/   Rust and Tauri backend
+ui/          React and TypeScript frontend
+runtime/     Runtime helpers and reproducible Steam shim source
 compat-db/   Bundled game compatibility entries
 wine/        Wine source-build tooling
-scripts/     Developer and release scripts
+scripts/     Development and release scripts
 docs/        Architecture and contributor documentation
 ```
 
 ## Contributing
 
-See [docs/contributing.md](docs/contributing.md) and
-[docs/building.md](docs/building.md). Compatibility fixes should be narrowly
-scoped, tested against a named Wine/Steam version, and documented so the next
-maintainer can reproduce them.
+Contributions are welcome. Start with [docs/contributing.md](docs/contributing.md).
+For compatibility fixes, please keep the change focused, test it against a
+named Wine and Steam version, and document enough detail for the next person to
+reproduce it.
 
 ## License
 
-Budu is licensed under the
-[GNU General Public License v3.0 only](LICENSE). Downloaded runtime components
-retain their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Budu is licensed under the [GNU General Public License v3.0 only](LICENSE).
+Downloaded runtime components keep their own licenses. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details.
