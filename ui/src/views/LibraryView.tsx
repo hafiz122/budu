@@ -245,7 +245,7 @@ export function LibraryView({
 
       {/* Message */}
       {message && (
-        <div className={`mac-notice mb-4 ${
+        <div className={`mac-notice mb-4 ${!message.ok ? 'selectable-diagnostic ' : ''}${
           message.ok
             ? 'mac-notice-success'
             : 'mac-notice-danger'
@@ -259,7 +259,7 @@ export function LibraryView({
       {log.length > 0 && (
         <div ref={logRef}
           className="mb-4 max-h-36 overflow-auto rounded-[3px] border border-[#38383c] bg-[#0d0d0f] p-3
-                     font-mono text-[10px] leading-relaxed shadow-inner">
+                     font-mono text-[10px] leading-relaxed shadow-inner selectable-diagnostic">
           {log.map((line, i) => (
             <div key={i} className={`whitespace-pre-wrap break-all ${line.startsWith('!') ? 'text-[#ff6961]' : line.startsWith('>') ? 'text-[#7ce997]' : 'text-[#69b4ff]'}`}>
               {line}

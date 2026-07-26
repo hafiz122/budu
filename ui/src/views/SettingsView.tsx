@@ -37,7 +37,7 @@ export function SettingsView() {
       </div>
 
       {message && (
-        <div className={`mac-notice mb-4 ${
+        <div className={`mac-notice mb-4 ${!message.ok ? 'selectable-diagnostic ' : ''}${
           message.ok ? 'mac-notice-success' : 'mac-notice-danger'
         }`}>
           {message.text}

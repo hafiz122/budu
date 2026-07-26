@@ -59,6 +59,14 @@ select {
 button,
 select {
   cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 ::selection {
@@ -166,8 +174,20 @@ select {
     color: #ff958e;
   }
 
+  .selectable-diagnostic {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
   .drag-region {
     -webkit-app-region: drag;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  [data-tauri-drag-region] {
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   .no-drag {

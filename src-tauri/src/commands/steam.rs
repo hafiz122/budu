@@ -424,14 +424,22 @@ fn stop_wine_prefix(
         .arg("-k")
         .output()
         .map_err(|error| format!("Failed to stop the existing Steam session: {error}"))?;
-    if output.status.success() {
+    // `wineserver -k` exits with code 1 and no diagnostic when the prefix has
+    // no running server. That is the normal state after a restart (or after a
+    // previous game has already exited), so there is no Steam session to stop.
+    if wineserver_was_stopped(&output) {
         Ok(())
     } else {
         Err(format!(
             "Failed to stop the existing Steam session: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            command_failure_details(&output)
         ))
     }
+}
+
+fn wineserver_was_stopped(output: &std::process::Output) -> bool {
+    output.status.success()
+        || (output.status.code() == Some(1) && output.stdout.is_empty() && output.stderr.is_empty())
 }
 
 /// Steam's files are shared to save disk space, but its Wine prefix must be
@@ -927,6 +935,23 @@ mod tests {
 
         assert!(is_separate_steam_prefix(&shared, &game));
         assert!(!is_separate_steam_prefix(&shared, &shared));
+    }
+
+    #[test]
+    fn stopped_wineserver_without_a_running_prefix_is_not_an_error() {
+        let output = Command::new("sh").args(["-c", "exit 1"]).output().unwrap();
+
+        assert!(wineserver_was_stopped(&output));
+    }
+
+    #[test]
+    fn stopped_wineserver_with_a_diagnostic_is_an_error() {
+        let output = Command::new("sh")
+            .args(["-c", "echo unable to connect >&2; exit 1"])
+            .output()
+            .unwrap();
+
+        assert!(!wineserver_was_stopped(&output));
     }
 
     #[test]
