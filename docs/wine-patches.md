@@ -1,14 +1,15 @@
 # Wine and Steam compatibility maintenance
 
-Budu uses Wine Staging 11.10 with one small, source-available macOS patch,
-plus a separate SteamWebHelper launcher. Keeping both workarounds narrow makes
-them auditable and independently replaceable.
+Budu uses Wine Staging 11.10 as its stable default, with a private Wine
+Staging 11.13 test runtime available only for Raft. Both use one small,
+source-available macOS patch plus a separate SteamWebHelper launcher.
 
 ## DXMT window integration
 
 Wine's macOS driver hides the private Cocoa-window hooks that DXMT needs to put
 a Metal layer inside a game window. DXMT 0.74 also consumes a private structure
-layout used by FOSS CrossOver Wine, which differs from upstream Wine 11.10.
+layout used by FOSS CrossOver Wine. The local patch is ported and verified
+against the Wine Staging 11.13 source used by the Raft test runtime.
 
 `wine/patches/0001-winemac-dxmt-compat.patch`:
 
@@ -21,10 +22,26 @@ layout used by FOSS CrossOver Wine, which differs from upstream Wine 11.10.
    code or binaries.
 
 The four affected Unix runtime modules are bundled under
-`runtime/dist/wine-11.10` so Budu can patch a newly downloaded managed
-Wine runtime before installing DXMT. Originals are retained beside each file
-with a `.gamerunner-original` suffix. The same binaries can be reproduced from
-WineHQ and Wine Staging sources with `wine/build.sh`.
+`runtime/dist/wine-11.10` and `runtime/dist/wine-11.13`. Budu selects the
+matching bridge for the downloaded runtime and refuses to overlay the 11.10
+bridge onto 11.13. Originals are retained beside each file with a
+`.gamerunner-original` suffix. The 11.13 overlay can be reproduced from WineHQ
+and Wine Staging sources with `wine/build.sh`.
+
+## Raft-only Wine 11.13 test
+
+This is deliberately not the default runtime. Settings can install Wine
+Staging 11.13 and assign it only to Raft's `steam-648800` bottle. Before each
+Raft launch, Budu runs Wine `ipconfig /all` in that bottle and requires a
+non-loopback adapter with both IPv4 and a default gateway. If detection fails,
+the game does not launch and the exact runtime check is shown instead of
+silently falling back to Wine 11.10.
+
+The test also warns when `/Library/Frameworks/GStreamer.framework` is absent.
+Budu does not bundle or install GStreamer.
+
+To roll back: close Raft and Steam, open Settings, select **Roll Back Raft to
+Wine 11.10**, then relaunch. No other bottle is changed.
 
 ## Steam CEF black window
 

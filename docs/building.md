@@ -75,21 +75,27 @@ Wine Unix modules implementing Budu's DXMT window bridge. The rest of
 Wine and DXMT are checksum-verified downloads so the app remains reasonably
 sized.
 
-## Rebuilding Wine from source
+## Rebuilding the Raft Wine 11.13 bridge
 
-The normal app downloads the pinned Gcenx build. Maintainers can independently
-rebuild Wine 11.10 and its staging patch set with:
+The normal app downloads a checksum-pinned Gcenx Wine archive. The Raft test
+runtime additionally needs a source-built x86_64 bridge whose Wine and Staging
+sources are pinned in `wine/build.sh`. Use an Intel/Rosetta shell and Intel
+Homebrew dependencies:
 
 ```bash
-brew install autoconf bison flex freetype gnutls mingw-w64 pkg-config
-bash wine/build.sh 11.10
+arch -x86_64 /usr/local/bin/brew install autoconf bison flex
+arch -x86_64 bash wine/build.sh 11.13
 ```
 
 The script downloads checksum-pinned upstream sources into the ignored
-`wine/build/` directory, applies Wine Staging plus any patches in
-`wine/patches/`, and produces a redistributable archive with `COPYING.LIB`.
-The affected modules checked into `runtime/dist/wine-11.10` come from this
-source recipe and are overlaid onto the pinned managed Wine build at runtime.
+`wine/build/` directory, applies Wine Staging and Budu's patch, and produces
+only the four x86_64 overlay modules. Copy those files to
+`runtime/dist/wine-11.13` after verifying their architecture and symbols. The
+full Wine runtime remains the checksum-verified upstream archive.
+
+Wine 11.10 remains the default. The 11.13 runtime is a private Raft test only:
+do not publish it or claim a multiplayer fix until a real friend-world join has
+succeeded.
 
 Local builds are ad-hoc signed but not notarized. For public distribution,
 release maintainers should use a Developer ID and the notarization variables

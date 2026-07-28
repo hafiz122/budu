@@ -111,6 +111,19 @@ export interface WineVersion {
   source: string;
 }
 
+export interface RaftRuntimePreflight {
+  runtime: string;
+  usable_adapter_found: boolean;
+  gstreamer_installed: boolean;
+  message: string;
+}
+
+export interface RaftWineTestStatus {
+  enabled: boolean;
+  bottle_found: boolean;
+  preflight: RaftRuntimePreflight | null;
+}
+
 export interface DllOverrideConfig {
   dxgi: boolean;
   d3d9: boolean;

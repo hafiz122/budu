@@ -232,6 +232,14 @@ fn build_steam_launch_spec(
     let config = bottle_manager.get_config(bottle_id)?;
     let wine_bin = wine_manager.resolve_steam_wine_bin(&config.bottle.wine_version)?;
     let prefix = bottle_manager.resolve_bottle_path(bottle_id)?;
+    if app_id == crate::wine_manager::RAFT_STEAM_APP_ID
+        && config.bottle.wine_version == crate::wine_manager::RAFT_TEST_WINE_VERSION
+    {
+        let preflight = wine_manager.raft_network_preflight(&prefix)?;
+        if !preflight.usable_adapter_found {
+            return Err(preflight.message);
+        }
+    }
     let override_config = DllOverrideConfig {
         dxgi: config.graphics.dxgi_override_native,
         d3d9: false,

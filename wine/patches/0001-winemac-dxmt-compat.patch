@@ -183,8 +183,8 @@ index 3818084..4eec1bb 100644
 +macdrv_metal_layer macdrv_view_get_metal_layer(macdrv_metal_view v);
 +extern __attribute__((visibility("default")))
 +void macdrv_view_release_metal_view(macdrv_metal_view v);
- extern bool macdrv_get_view_backing_size(macdrv_view v, int backing_size[2]);
- extern void macdrv_set_view_backing_size(macdrv_view v, const int backing_size[2]);
+ extern macdrv_metal_swapchain macdrv_create_view_swapchain(macdrv_view v);
+ extern macdrv_metal_swapchain macdrv_create_offscreen_swapchain(void* hwnd, CGRect bounds);
  extern uint32_t macdrv_window_background_color(void);
 diff --git a/dlls/winemac.drv/window.c b/dlls/winemac.drv/window.c
 index 1f87f9f..c2f6a01 100644
@@ -271,12 +271,11 @@ index 1f87f9f..c2f6a01 100644
  static void sync_window_position(struct macdrv_win_data *data, UINT swp_flags, const struct window_rects *old_rects)
  {
      CGRect frame = cgrect_from_rect(data->rects.visible);
-@@ -1115,6 +1168,8 @@ static void macdrv_client_surface_update(struct client_surface *client)
+@@ -1111,5 +1164,7 @@ static void macdrv_client_surface_update(struct client_surface *client)
      if (!(data = get_win_data(toplevel))) return;
-     OffsetRect(&rect, data->rects.client.left - data->rects.visible.left, data->rects.client.top - data->rects.visible.top);
-     macdrv_set_view_frame(surface->cocoa_view, cgrect_from_rect(rect));
+     macdrv_set_view_frame(surface->cocoa_view, cgrect_from_rect(client->monitor_rect));
 +    if (toplevel == hwnd && data->dxmt_active && data->dxmt_view)
-+        macdrv_set_view_frame(data->dxmt_view, cgrect_from_rect(rect));
++        macdrv_set_view_frame(data->dxmt_view, cgrect_from_rect(client->monitor_rect));
      macdrv_set_view_superview(surface->cocoa_view, toplevel == hwnd ? NULL : data->client_view, data->cocoa_window, NULL, NULL);
      release_win_data(data);
  }

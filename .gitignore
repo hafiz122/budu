@@ -9,6 +9,8 @@ runtime/dist/*
 !runtime/dist/steamwebhelper-shim.exe
 !runtime/dist/wine-11.10/
 !runtime/dist/wine-11.10/**
+!runtime/dist/wine-11.13/
+!runtime/dist/wine-11.13/**
 
 # Local game data and caches
 *.dxvk-cache

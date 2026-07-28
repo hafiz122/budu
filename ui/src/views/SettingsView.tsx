@@ -2,19 +2,21 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader } from '@/components/ui/Card';
 import { setTheme, setColorScheme, getAvailableThemes } from '@/lib/theme';
-import type { WineVersion, GraphicsBackendInfo } from '@/lib/types';
-import { listWineVersions, detectBackends, installWineVersion } from '@/lib/tauri';
+import type { WineVersion, GraphicsBackendInfo, RaftWineTestStatus } from '@/lib/types';
+import { listWineVersions, detectBackends, installWineVersion, enableRaftNetworkTest, disableRaftNetworkTest, raftNetworkTestStatus } from '@/lib/tauri';
 
 export function SettingsView() {
   const [wineVersions, setWineVersions] = useState<WineVersion[]>([]);
   const [backends, setBackends] = useState<GraphicsBackendInfo[]>([]);
   const [installing, setInstalling] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
+  const [raftTest, setRaftTest] = useState<RaftWineTestStatus | null>(null);
   const themes = getAvailableThemes();
 
   useEffect(() => {
     listWineVersions().then(setWineVersions).catch(() => {});
     detectBackends().then(setBackends).catch(() => {});
+    raftNetworkTestStatus().then(setRaftTest).catch(() => {});
   }, []);
 
   const handleInstallWine = async (version: string) => {
@@ -24,6 +26,23 @@ export function SettingsView() {
       setMessage({ text: `Wine ${version} installed.`, ok: true });
       const updated = await listWineVersions();
       setWineVersions(updated);
+    } catch (err) {
+      setMessage({ text: String(err), ok: false });
+    } finally { setInstalling(null); }
+  };
+
+  const setRaftTestRuntime = async (enabled: boolean) => {
+    setInstalling('raft-test'); setMessage(null);
+    try {
+      if (enabled) {
+        const preflight = await enableRaftNetworkTest();
+        setMessage({ text: `Raft now uses Wine 11.13 for this private test. ${preflight.message}`, ok: true });
+      } else {
+        await disableRaftNetworkTest();
+        setMessage({ text: 'Raft is back on the stable Wine 11.10 runtime.', ok: true });
+      }
+      setRaftTest(await raftNetworkTestStatus());
+      setWineVersions(await listWineVersions());
     } catch (err) {
       setMessage({ text: String(err), ok: false });
     } finally { setInstalling(null); }
@@ -91,6 +110,26 @@ export function SettingsView() {
                 {installing ? '...' : 'Install Wine'}
               </Button>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><h2>Raft Multiplayer Test</h2></CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-[12px] leading-relaxed text-white/50">
+              Private test only. This installs Wine 11.13 and applies it only to Raft. Close Raft and Steam before switching. Other bottles stay on Wine 11.10.
+            </p>
+            {!raftTest?.bottle_found ? (
+              <p className="text-[12px] text-white/45">Launch Raft from Library once to create its managed bottle.</p>
+            ) : (
+              <>
+                {raftTest?.preflight && <p className="text-[12px] text-white/55">{raftTest.preflight.message}</p>}
+                <Button variant="secondary" size="sm" disabled={installing !== null}
+                  onClick={() => setRaftTestRuntime(!raftTest?.enabled)}>
+                  {installing === 'raft-test' ? '...' : raftTest?.enabled ? 'Roll Back Raft to Wine 11.10' : 'Enable Wine 11.13 for Raft'}
+                </Button>
+              </>
+            )}
           </CardContent>
         </Card>
 

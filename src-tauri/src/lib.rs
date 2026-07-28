@@ -131,6 +131,9 @@ pub fn run() {
             commands::wine::wine_list_versions,
             commands::wine::wine_install_version,
             commands::wine::wine_get_default_version,
+            commands::wine::wine_enable_raft_network_test,
+            commands::wine::wine_disable_raft_network_test,
+            commands::wine::wine_raft_network_test_status,
             // Process commands
             commands::process::process_list,
             commands::process::process_signal,

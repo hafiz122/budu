@@ -6,13 +6,43 @@ use std::process::Command;
 
 use crate::config::AppConfig;
 
-const GAMERUNNER_WINE_VERSION: &str = "11.10-staging";
-const GAMERUNNER_WINE_URL: &str = "https://github.com/Gcenx/macOS_Wine_builds/releases/download/11.10/wine-staging-11.10-osx64.tar.xz";
-const GAMERUNNER_WINE_SHA256: &str =
-    "940bdd1a177872020be01c5c33917cb8eecc1cc3193ad554914fb6efd90d7889";
+pub const STABLE_WINE_VERSION: &str = "11.10-staging";
+pub const RAFT_TEST_WINE_VERSION: &str = "11.13-staging";
+pub const RAFT_STEAM_APP_ID: &str = "648800";
+
+struct RuntimeSpec {
+    version: &'static str,
+    url: &'static str,
+    sha256: &'static str,
+    bridge_resource: &'static str,
+}
+
+const STABLE_WINE: RuntimeSpec = RuntimeSpec {
+    version: STABLE_WINE_VERSION,
+    url: "https://github.com/Gcenx/macOS_Wine_builds/releases/download/11.10/wine-staging-11.10-osx64.tar.xz",
+    sha256: "940bdd1a177872020be01c5c33917cb8eecc1cc3193ad554914fb6efd90d7889",
+    bridge_resource: "wine-11.10",
+};
+
+const RAFT_TEST_WINE: RuntimeSpec = RuntimeSpec {
+    version: RAFT_TEST_WINE_VERSION,
+    url: "https://github.com/Gcenx/macOS_Wine_builds/releases/download/11.13/wine-staging-11.13-osx64.tar.xz",
+    sha256: "dc7bbd684ee0e820871851055115f3c829ed65c13939000e52f0a15a027537bf",
+    bridge_resource: "wine-11.13",
+};
 const DXMT_URL: &str =
     "https://github.com/3Shain/dxmt/releases/download/v0.74/dxmt-v0.74-builtin.tar.gz";
 const DXMT_SHA256: &str = "2598981a8b725653773e277470a95dda4253b8a14d36e0dc96dce0e3800f0ceb";
+
+fn runtime_spec(version: &str) -> Result<&'static RuntimeSpec, String> {
+    match version {
+        STABLE_WINE_VERSION => Ok(&STABLE_WINE),
+        RAFT_TEST_WINE_VERSION => Ok(&RAFT_TEST_WINE),
+        _ => Err(format!(
+            "Unsupported Wine version '{version}'. Budu supports {STABLE_WINE_VERSION} and the private Raft test runtime {RAFT_TEST_WINE_VERSION}."
+        )),
+    }
+}
 
 /// Represents an installed Wine version.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,6 +55,14 @@ pub struct WineVersion {
     pub arch: String,
     pub installed: bool,
     pub source: String, // "bundled" | "homebrew" | "system"
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RaftRuntimePreflight {
+    pub runtime: String,
+    pub usable_adapter_found: bool,
+    pub gstreamer_installed: bool,
+    pub message: String,
 }
 
 pub struct WineManager {
@@ -169,6 +207,15 @@ impl WineManager {
             return Ok(versioned);
         }
 
+        // The Raft test bottle must never silently fall back to the stable
+        // runtime. Doing so would hide a failed test-runtime install and make
+        // multiplayer diagnostics misleading.
+        if version == RAFT_TEST_WINE_VERSION {
+            return Err(format!(
+                "Wine {RAFT_TEST_WINE_VERSION} is required for the Raft multiplayer test bottle but is not installed. Open Settings and install the Raft test runtime."
+            ));
+        }
+
         // Check default version
         let default = self
             .config
@@ -200,6 +247,47 @@ impl WineManager {
     /// Steam and ordinary executables use the same user-selected Wine runtime.
     pub fn resolve_steam_wine_bin(&self, version: &str) -> Result<PathBuf, String> {
         self.resolve_wine_bin(version)
+    }
+
+    /// Check the one capability that the Raft 11.13 experiment is intended to
+    /// provide: Wine must see a real network adapter, not only loopback.
+    pub fn raft_network_preflight(&self, prefix: &Path) -> Result<RaftRuntimePreflight, String> {
+        let wine = self.resolve_wine_bin(RAFT_TEST_WINE_VERSION)?;
+        let output = Command::new(&wine)
+            .args(["ipconfig.exe", "/all"])
+            .env("WINEPREFIX", prefix)
+            .output()
+            .map_err(|error| {
+                format!(
+                    "Raft test runtime {RAFT_TEST_WINE_VERSION} could not run ipconfig: {error}"
+                )
+            })?;
+        if !output.status.success() {
+            return Err(format!(
+                "Raft test runtime {RAFT_TEST_WINE_VERSION} could not inspect network adapters (ipconfig exited {}).",
+                output.status
+            ));
+        }
+
+        let adapter = parse_usable_wine_adapter(&String::from_utf8_lossy(&output.stdout));
+        let gstreamer_installed = Path::new("/Library/Frameworks/GStreamer.framework").is_dir();
+        let message = match (&adapter, gstreamer_installed) {
+            (Some(name), true) => format!(
+                "Wine {RAFT_TEST_WINE_VERSION} can use network adapter '{name}'. GStreamer is installed."
+            ),
+            (Some(name), false) => format!(
+                "Wine {RAFT_TEST_WINE_VERSION} can use network adapter '{name}', but GStreamer is not installed. Videos and some Steam content may not work. Install the official GStreamer framework, then relaunch."
+            ),
+            (None, _) => format!(
+                "Wine {RAFT_TEST_WINE_VERSION} did not report a non-loopback adapter with both IPv4 and a default gateway. Raft will not launch with this test runtime."
+            ),
+        };
+        Ok(RaftRuntimePreflight {
+            runtime: RAFT_TEST_WINE_VERSION.into(),
+            usable_adapter_found: adapter.is_some(),
+            gstreamer_installed,
+            message,
+        })
     }
 
     pub fn install_dxmt_for_prefix(
@@ -235,7 +323,11 @@ impl WineManager {
             ));
         }
 
-        self.install_wine_dxmt_bridge(wine_root)?;
+        let version = wine_root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| "Managed Wine runtime has an unexpected path".to_string())?;
+        self.install_wine_dxmt_bridge(wine_root, version)?;
 
         for relative in [
             "x86_64-unix/winemetal.so",
@@ -256,13 +348,15 @@ impl WineManager {
         )
     }
 
-    fn install_wine_dxmt_bridge(&self, wine_root: &Path) -> Result<(), String> {
-        let development_dir =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../runtime/dist/wine-11.10");
+    fn install_wine_dxmt_bridge(&self, wine_root: &Path, version: &str) -> Result<(), String> {
+        let runtime = runtime_spec(version)?;
+        let development_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../runtime/dist")
+            .join(runtime.bridge_resource);
         let bridge_root = self
             .resource_dir
             .as_ref()
-            .map(|dir| dir.join("runtime/wine-11.10"))
+            .map(|dir| dir.join("runtime").join(runtime.bridge_resource))
             .filter(|dir| dir.join("lib/wine/x86_64-unix/ntdll.so").is_file())
             .or_else(|| {
                 development_dir
@@ -318,20 +412,14 @@ impl WineManager {
 
     /// Install the macOS game runtime used by Budu.
     pub async fn install_version(&self, version: &str) -> Result<(), String> {
-        if version != GAMERUNNER_WINE_VERSION {
-            return Err(format!(
-                "Unsupported Wine version '{version}'. Budu currently supports \
-                 {GAMERUNNER_WINE_VERSION}."
-            ));
-        }
-
-        self.install_gamerunner_wine()?;
+        let runtime = runtime_spec(version)?;
+        self.install_gamerunner_wine(runtime)?;
         self.install_dxmt()?;
         Ok(())
     }
 
-    fn install_gamerunner_wine(&self) -> Result<(), String> {
-        let destination = self.config.wine_dir.join(GAMERUNNER_WINE_VERSION);
+    fn install_gamerunner_wine(&self, runtime: &RuntimeSpec) -> Result<(), String> {
+        let destination = self.config.wine_dir.join(runtime.version);
         if destination.join("bin/wine64").is_file() && destination.join("bin/wineserver").is_file()
         {
             return Ok(());
@@ -340,7 +428,8 @@ impl WineManager {
         std::fs::create_dir_all(&self.config.wine_dir)
             .map_err(|error| format!("Failed to create Wine directory: {error}"))?;
         let staging = self.config.wine_dir.join(format!(
-            ".install-{GAMERUNNER_WINE_VERSION}-{}",
+            ".install-{}-{}",
+            runtime.version,
             std::process::id()
         ));
         if staging.exists() {
@@ -355,10 +444,10 @@ impl WineManager {
             Command::new("curl")
                 .args(["-L", "--fail", "--retry", "5", "-o"])
                 .arg(&archive)
-                .arg(GAMERUNNER_WINE_URL),
+                .arg(runtime.url),
             "download Wine",
         )?;
-        verify_sha256(&archive, GAMERUNNER_WINE_SHA256, "Wine")?;
+        verify_sha256(&archive, runtime.sha256, "Wine")?;
         run_checked(
             Command::new("tar")
                 .arg("xJf")
@@ -453,6 +542,37 @@ impl WineManager {
         std::fs::rename(&staging, &destination)
             .map_err(|error| format!("Failed to activate DXMT runtime: {error}"))
     }
+}
+
+fn parse_usable_wine_adapter(ipconfig: &str) -> Option<String> {
+    let mut name = None;
+    let mut ipv4 = false;
+    let mut gateway = false;
+
+    let finish = |name: &Option<String>, ipv4: bool, gateway: bool| {
+        (ipv4 && gateway).then(|| name.clone().unwrap_or_else(|| "network adapter".into()))
+    };
+
+    for line in ipconfig.lines() {
+        let trimmed = line.trim();
+        if trimmed.ends_with(':') && !trimmed.contains('.') {
+            if let Some(found) = finish(&name, ipv4, gateway) {
+                return Some(found);
+            }
+            name = Some(trimmed.trim_end_matches(':').to_string());
+            ipv4 = false;
+            gateway = false;
+        } else if trimmed.starts_with("IPv4 Address") {
+            ipv4 = trimmed
+                .split_once(':')
+                .is_some_and(|(_, value)| !value.trim().starts_with("127."));
+        } else if trimmed.starts_with("Default Gateway") {
+            gateway = trimmed
+                .split_once(':')
+                .is_some_and(|(_, value)| !value.trim().is_empty() && value.trim() != "0.0.0.0");
+        }
+    }
+    finish(&name, ipv4, gateway)
 }
 
 fn install_runtime_file(source: &Path, destination: &Path) -> Result<(), String> {
@@ -601,7 +721,7 @@ mod tests {
             wine_dir: tmp.path().join("wine"),
             ..Default::default()
         };
-        let wine_root = config.wine_dir.join("managed/runtime/wine");
+        let wine_root = config.wine_dir.join(STABLE_WINE_VERSION);
         let wine_bin = wine_root.join("bin/wine");
         let wine_library = wine_root.join("lib/wine");
         std::fs::create_dir_all(wine_bin.parent().unwrap()).unwrap();
@@ -652,7 +772,7 @@ mod tests {
             wine_dir: tmp.path().join("wine"),
             ..Default::default()
         };
-        let wine_root = config.wine_dir.join("managed/runtime/wine");
+        let wine_root = config.wine_dir.join(STABLE_WINE_VERSION);
         for relative in [
             "bin/wine",
             "lib/wine/x86_64-unix/wine",
@@ -678,7 +798,7 @@ mod tests {
         }
 
         WineManager::with_resource_dir(config, Some(resources))
-            .install_wine_dxmt_bridge(&wine_root)
+            .install_wine_dxmt_bridge(&wine_root, STABLE_WINE_VERSION)
             .unwrap();
 
         assert_eq!(
@@ -703,5 +823,29 @@ mod tests {
         assert!(verify_sha256(&archive, &"0".repeat(64), "test runtime")
             .unwrap_err()
             .contains("checksum mismatch"));
+    }
+
+    #[test]
+    fn raft_runtime_is_pinned_and_keeps_stable_default_separate() {
+        assert_eq!(
+            runtime_spec(STABLE_WINE_VERSION).unwrap().version,
+            "11.10-staging"
+        );
+        let raft = runtime_spec(RAFT_TEST_WINE_VERSION).unwrap();
+        assert_eq!(raft.url, "https://github.com/Gcenx/macOS_Wine_builds/releases/download/11.13/wine-staging-11.13-osx64.tar.xz");
+        assert_eq!(raft.sha256.len(), 64);
+        assert_eq!(raft.bridge_resource, "wine-11.13");
+    }
+
+    #[test]
+    fn raft_adapter_parser_requires_ipv4_and_gateway() {
+        let usable = "Ethernet adapter en0:\n   IPv4 Address. . . . . . . . . . . : 192.168.1.29\n   Default Gateway . . . . . . . . . : 192.168.1.1\n";
+        assert_eq!(
+            parse_usable_wine_adapter(usable).as_deref(),
+            Some("Ethernet adapter en0")
+        );
+
+        let loopback_only = "Ethernet adapter Loopback:\n   IPv4 Address. . . . . . . . . . . : 127.0.0.1\n   Default Gateway . . . . . . . . . :\n";
+        assert_eq!(parse_usable_wine_adapter(loopback_only), None);
     }
 }

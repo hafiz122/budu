@@ -10,6 +10,8 @@ import type {
   SteamApp,
   SteamStatus,
   WineVersion,
+  RaftRuntimePreflight,
+  RaftWineTestStatus,
 } from './types';
 
 // ── Bottle commands ──────────────────────────────────────────
@@ -117,6 +119,18 @@ export async function installWineVersion(version: string): Promise<void> {
 
 export async function getDefaultWineVersion(): Promise<string> {
   return invoke('wine_get_default_version');
+}
+
+export async function enableRaftNetworkTest(): Promise<RaftRuntimePreflight> {
+  return invoke('wine_enable_raft_network_test');
+}
+
+export async function disableRaftNetworkTest(): Promise<void> {
+  return invoke('wine_disable_raft_network_test');
+}
+
+export async function raftNetworkTestStatus(): Promise<RaftWineTestStatus> {
+  return invoke('wine_raft_network_test_status');
 }
 
 // ── Process commands ─────────────────────────────────────────

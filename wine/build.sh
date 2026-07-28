@@ -1,18 +1,22 @@
 #!/bin/bash
 # Reproducibly build the open-source Wine runtime used by GameRunner.
 #
-# Prerequisites:
-#   brew install autoconf bison flex freetype gnutls mingw-w64 pkg-config
+# Prerequisites (run from an Intel/Rosetta Homebrew shell):
+#   arch -x86_64 /usr/local/bin/brew install autoconf bison flex
+#
+# This builds only Budu's x86_64 DXMT bridge overlay. It is installed over the
+# official Gcenx Wine Staging archive at runtime, so it does not replace or
+# redistribute the full Wine build.
 #
 # Usage:
-#   bash wine/build.sh [11.10]
+#   arch -x86_64 bash wine/build.sh [11.13]
 
 set -euo pipefail
 
-WINE_VERSION="${1:-11.10}"
-SUPPORTED_VERSION="11.10"
-WINE_SHA256="e4c35ebe26f4f8eef5f2143e24a1fb9fd103f1d46132ad4755479227d086b8e7"
-STAGING_SHA256="102b9d401d9286a654eb437fdd68b02bd4c007532a203dea66367e55e7287e89"
+WINE_VERSION="${1:-11.13}"
+SUPPORTED_VERSION="11.13"
+WINE_SHA256="9548390c5042126b6ecf0af2cba477b75aa3e99be9797ea70d5026374c5074f1"
+STAGING_SHA256="59738ad7f2ca72f4b21a34a1a0edbfb7e60f2d8fd50e337391cf5fdb1cc8d4f0"
 
 if [[ "$WINE_VERSION" != "$SUPPORTED_VERSION" ]]; then
     echo "ERROR: No pinned source checksums for Wine $WINE_VERSION." >&2
@@ -84,7 +88,9 @@ mkdir -p "$INSTALL"
     cd "$SOURCE"
     arch -x86_64 ./configure \
         --prefix= \
+        --build=x86_64-apple-darwin \
         --enable-win64 \
+        --enable-archs=none \
         --disable-tests \
         --without-alsa \
         --without-capi \
@@ -101,15 +107,16 @@ mkdir -p "$INSTALL"
         --without-vkd3d \
         --without-x \
         --with-coreaudio \
-        --with-freetype \
-        --with-gnutls \
-        --with-metal
-    arch -x86_64 make -j"$(sysctl -n hw.logicalcpu)"
+        --without-freetype \
+        --without-gnutls \
+        --without-mingw \
+        --with-coreaudio
+    arch -x86_64 make -j"$(sysctl -n hw.logicalcpu)" \
+        loader/wine tools/wine/wine dlls/ntdll/ntdll.so dlls/winemac.drv/winemac.so
     arch -x86_64 make install DESTDIR="$INSTALL"
 )
 
-cp "$SOURCE/COPYING.LIB" "$INSTALL/COPYING.LIB"
-tar -cJf "$WORK/gamerunner-wine-$WINE_VERSION-macos-x86_64.tar.xz" \
-    -C "$INSTALL" .
+file "$INSTALL/bin/wine" "$INSTALL/lib/wine/x86_64-unix/ntdll.so" | grep -q x86_64
+tar -cJf "$WORK/budu-wine-$WINE_VERSION-dxmt-bridge-macos-x86_64.tar.xz" -C "$INSTALL" .
 
-echo "Built $WORK/gamerunner-wine-$WINE_VERSION-macos-x86_64.tar.xz"
+echo "Built $WORK/budu-wine-$WINE_VERSION-dxmt-bridge-macos-x86_64.tar.xz"
