@@ -174,7 +174,7 @@ dependencies = [
 
 [[package]]
 name = "budu"
-version = "0.1.2"
+version = "0.1.4"
 dependencies = [
  "chrono",
  "directories",
